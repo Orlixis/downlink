@@ -14,6 +14,7 @@ import type {
   ExpandPlaylistResult,
   FetchMetadataOptions,
   FetchMetadataResult,
+  PreviewPlaylistResult,
   PresetInfo,
   QueueItem,
   ToolchainStatus,
@@ -53,6 +54,7 @@ export interface UseDownlinkReturn {
   // URL operations
   addUrls: (urlsText: string, options: AddUrlsOptions) => Promise<AddUrlsResult>;
   fetchMetadata: (url: string, options: FetchMetadataOptions) => Promise<FetchMetadataResult>;
+  previewPlaylist: (playlistUrl: string) => Promise<PreviewPlaylistResult>;
   expandPlaylist: (playlistUrl: string, options: ExpandPlaylistOptions) => Promise<ExpandPlaylistResult>;
   extractUrls: (text: string) => Promise<string[]>;
 
@@ -431,6 +433,15 @@ export function useDownlink(): UseDownlinkReturn {
     [refreshQueue]
   );
 
+  const previewPlaylist = useCallback(
+    async (playlistUrl: string): Promise<PreviewPlaylistResult> => {
+      return invoke<PreviewPlaylistResult>("preview_playlist", {
+        playlistUrl: playlistUrl,
+      });
+    },
+    []
+  );
+
   const expandPlaylist = useCallback(
     async (
       playlistUrl: string,
@@ -614,6 +625,7 @@ export function useDownlink(): UseDownlinkReturn {
     // URL operations
     addUrls,
     fetchMetadata,
+    previewPlaylist,
     expandPlaylist,
     extractUrls,
 

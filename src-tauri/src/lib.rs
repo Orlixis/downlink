@@ -81,8 +81,35 @@ async fn get_or_init_download_manager(
     });
 
     // Create download manager
-    let config = DownloadConfig::default();
+    let settings = {
+        let db = state.db.lock().await;
+        let manager = SettingsManager::new(db.conn());
+        manager.get_user_settings().unwrap_or_default()
+    };
+
+    let (yt_dlp_path, ffmpeg_path) = {
+        let tm = state.tool_manager.read().await;
+        let yt_dlp_path = if let Some(ref manager) = *tm {
+            manager.yt_dlp_path().await
+        } else {
+            None
+        };
+        let ffmpeg_path = if let Some(ref manager) = *tm {
+            manager.ffmpeg_path().await
+        } else {
+            None
+        };
+        (yt_dlp_path, ffmpeg_path)
+    };
+
+    let config = DownloadConfig {
+        yt_dlp_path: yt_dlp_path.unwrap_or_else(download_manager::find_ytdlp_binary),
+        ffmpeg_path: ffmpeg_path.or_else(download_manager::find_ffmpeg_binary),
+        max_concurrent: settings.general.concurrency as usize,
+        default_output_template: settings.formats.filename_template,
+    };
     let manager = Arc::new(DownloadManager::new(config, state.db.clone(), event_tx));
+    manager.start_completion_listener();
 
     *dm = Some(manager.clone());
     manager
@@ -141,6 +168,25 @@ pub struct FetchMetadataResult {
     filesize_bytes: Option<u64>,
     playlist_title: Option<String>,
     playlist_count_hint: Option<u64>,
+}
+
+/// A single video entry from playlist preview (without adding to queue).
+#[derive(Debug, Serialize)]
+pub struct PlaylistVideoPreview {
+    id: String,
+    url: String,
+    title: Option<String>,
+    uploader: Option<String>,
+    duration_seconds: Option<u64>,
+    thumbnail_url: Option<String>,
+}
+
+/// Result from previewing a playlist.
+#[derive(Debug, Serialize)]
+pub struct PreviewPlaylistResult {
+    playlist_title: Option<String>,
+    videos: Vec<PlaylistVideoPreview>,
+    count: usize,
 }
 
 /// Result from expanding a playlist.
@@ -275,6 +321,51 @@ async fn fetch_metadata(
         filesize_bytes: meta.filesize_bytes,
         playlist_title: meta.playlist_title,
         playlist_count_hint: meta.playlist_count_hint,
+    })
+}
+
+/// Preview playlist videos without adding them to the queue.
+/// This allows users to select which videos they want to download.
+#[tauri::command]
+async fn preview_playlist(
+    state: State<'_, AppState>,
+    playlist_url: String,
+) -> Result<PreviewPlaylistResult, String> {
+    let urls = url_utils::extract_urls(&playlist_url);
+    let playlist = urls
+        .into_iter()
+        .next()
+        .ok_or_else(|| "No valid http(s) playlist URL found.".to_string())?;
+
+    let runner = build_ytdlp_runner(&state).await;
+    let (entries, _output) = runner
+        .enumerate_playlist(&playlist)
+        .await
+        .map_err(|e| format!("yt-dlp playlist enumeration failed: {e}"))?;
+
+    let videos: Vec<PlaylistVideoPreview> = entries
+        .into_iter()
+        .enumerate()
+        .map(|(idx, entry)| PlaylistVideoPreview {
+            id: format!(
+                "preview-{}-{}",
+                idx,
+                entry.url.chars().take(20).collect::<String>()
+            ),
+            url: entry.url,
+            title: entry.title,
+            uploader: entry.uploader,
+            duration_seconds: entry.duration_seconds,
+            thumbnail_url: entry.thumbnail_url,
+        })
+        .collect();
+
+    let count = videos.len();
+
+    Ok(PreviewPlaylistResult {
+        playlist_title: None, // We could extract this from the first entry or a separate call
+        videos,
+        count,
     })
 }
 
@@ -424,15 +515,17 @@ async fn retry_download(
 
 #[tauri::command]
 async fn start_all_downloads(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let ids = {
-        let mut db = state.db.lock().await;
-        db.get_queued_download_ids()
-            .map_err(|e| format!("Failed to get queued downloads: {e}"))?
+    let manager = get_or_init_download_manager(&state, &app).await;
+    let max_concurrent = {
+        let config_arc = manager.config();
+        let config = config_arc.read().await;
+        config.max_concurrent
     };
 
-    let manager = get_or_init_download_manager(&state, &app).await;
-    for id in ids {
-        let _ = manager.start(id).await;
+    for _ in 0..max_concurrent {
+        if let Err(e) = manager.start_next_queued().await {
+            log::error!("Error while trying to start next download: {}", e);
+        }
     }
     Ok(())
 }
@@ -558,12 +651,61 @@ async fn get_settings(state: State<'_, AppState>) -> Result<UserSettings, String
 }
 
 #[tauri::command]
-async fn save_settings(state: State<'_, AppState>, settings: UserSettings) -> Result<(), String> {
-    let db = state.db.lock().await;
-    let manager = SettingsManager::new(db.conn());
-    manager
-        .save_user_settings(&settings)
-        .map_err(|e| format!("Failed to save settings: {e}"))
+async fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: UserSettings,
+) -> Result<(), String> {
+    {
+        let db = state.db.lock().await;
+        let manager = SettingsManager::new(db.conn());
+        manager
+            .save_user_settings(&settings)
+            .map_err(|e| format!("Failed to save settings: {e}"))?;
+    }
+
+    // Update download manager config if it's running
+    let dm = state.download_manager.read().await;
+    if let Some(ref manager) = *dm {
+        let (yt_dlp_path, ffmpeg_path) = {
+            let tm = state.tool_manager.read().await;
+            let yt_dlp_path = if let Some(ref manager) = *tm {
+                manager.yt_dlp_path().await
+            } else {
+                None
+            }
+            .unwrap_or_else(download_manager::find_ytdlp_binary);
+
+            let ffmpeg_path = if let Some(ref manager) = *tm {
+                manager.ffmpeg_path().await
+            } else {
+                None
+            }
+            .or_else(download_manager::find_ffmpeg_binary);
+
+            (yt_dlp_path, ffmpeg_path)
+        };
+
+        let new_config = DownloadConfig {
+            max_concurrent: settings.general.concurrency as usize,
+            default_output_template: settings.formats.filename_template,
+            yt_dlp_path,
+            ffmpeg_path,
+        };
+        manager.update_config(new_config).await;
+        log::info!("Updated download manager config");
+    }
+
+    // Check if download manager exists before dropping the lock
+    let has_manager = dm.is_some();
+    drop(dm); // Release the lock before calling start_all_downloads
+
+    // Trigger a check for any queued downloads that can now start
+    if has_manager {
+        let _ = start_all_downloads(app, state).await;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -998,6 +1140,7 @@ pub fn run() {
             // URL and queue management
             add_urls,
             fetch_metadata,
+            preview_playlist,
             expand_playlist,
             extract_urls_from_text,
             // Download control

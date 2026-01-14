@@ -542,6 +542,23 @@ impl Db {
         Ok(result)
     }
 
+    /// Get the next download in the queue.
+    /// Get the next download in the queue that should be auto-started.
+    /// Only returns downloads in 'queued' or 'ready' status.
+    /// Stopped downloads are NOT included - they must be manually restarted.
+    pub fn get_next_queued_download_id(&self) -> Result<Option<Uuid>> {
+        let result = self.conn.query_row(
+            "SELECT id FROM downloads WHERE status IN ('queued', 'ready') ORDER BY created_at ASC LIMIT 1",
+            [],
+            |row| {
+                let id_str: String = row.get(0)?;
+                Uuid::parse_str(&id_str).map_err(|_| rusqlite::Error::InvalidQuery)
+            },
+        ).optional()?;
+
+        Ok(result)
+    }
+
     /// Clear all queued downloads (not started yet).
     pub fn clear_queued_downloads(&mut self) -> Result<()> {
         self.conn

@@ -32,7 +32,7 @@ impl YtDlpConfig {
         Self {
             yt_dlp_path,
             global_args: vec![],
-            metadata_timeout: Duration::from_secs(30),
+            metadata_timeout: Duration::from_secs(60), // Increased timeout for slow connections
         }
     }
 }
@@ -118,14 +118,29 @@ impl YtDlpRunner {
     /// - This is intended for preview and playlist detection.
     /// - It uses a timeout (configurable).
     /// - It does NOT download media.
+    /// - If the URL contains a playlist parameter, we use --playlist-items 1 to get
+    ///   playlist info while only fetching a single video's metadata.
     pub async fn fetch_metadata(&self, url: &str) -> Result<(PreviewMetadata, YtDlpOutput)> {
-        let args = vec![
+        // Check if URL contains playlist parameter (e.g., &list= or ?list=)
+        let has_playlist_param = url.contains("list=") || url.contains("/playlist");
+
+        let mut args = vec![
             "--dump-json".to_string(),
             "--no-warnings".to_string(),
-            "--no-call-home".to_string(),
             "--newline".to_string(),
-            url.to_string(),
         ];
+
+        if has_playlist_param {
+            // Use --playlist-items 1 to get playlist info while only fetching one video
+            // This preserves playlist_id and playlist_title in the output
+            args.push("--playlist-items".to_string());
+            args.push("1".to_string());
+        } else {
+            // For non-playlist URLs, use --no-playlist for faster fetching
+            args.push("--no-playlist".to_string());
+        }
+
+        args.push(url.to_string());
 
         let (json_lines, output) = self
             .exec_json_lines(&args, self.cfg.metadata_timeout)
@@ -159,7 +174,6 @@ impl YtDlpRunner {
             "--flat-playlist".to_string(),
             "--dump-json".to_string(),
             "--no-warnings".to_string(),
-            "--no-call-home".to_string(),
             "--newline".to_string(),
             playlist_url.to_string(),
         ];
@@ -374,24 +388,42 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
         .and_then(|x| x.as_u64())
         .or_else(|| v.get("filesize_approx").and_then(|x| x.as_u64()));
 
-    let is_playlist = v
+    // Detect if this is a playlist in two ways:
+    // 1. _type is "playlist" (direct playlist URL)
+    // 2. The video has playlist_id field (video URL that's part of a playlist)
+    let type_is_playlist = v
         .get("_type")
         .and_then(|x| x.as_str())
         .map(|t| t == "playlist")
-        .unwrap_or(false)
-        || v.get("entries").is_some();
+        .unwrap_or(false);
 
-    let playlist_title = v
-        .get("title")
+    let has_entries = v.get("entries").is_some();
+
+    // Check if this video belongs to a playlist (video URL with &list= parameter)
+    let playlist_id = v
+        .get("playlist_id")
         .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
-        .filter(|_| is_playlist);
+        .map(|s| s.to_string());
+
+    let is_playlist = type_is_playlist || has_entries || playlist_id.is_some();
+
+    // Get playlist title - either from direct playlist or from video's playlist_title field
+    let playlist_title = if type_is_playlist || has_entries {
+        // Direct playlist URL - use the title field
+        v.get("title")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+    } else {
+        // Video that belongs to a playlist - use playlist_title field
+        v.get("playlist_title")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+    };
 
     let playlist_count_hint = v
         .get("playlist_count")
         .and_then(|x| x.as_u64())
-        .or_else(|| v.get("n_entries").and_then(|x| x.as_u64()))
-        .filter(|_| is_playlist);
+        .or_else(|| v.get("n_entries").and_then(|x| x.as_u64()));
 
     Ok(PreviewMetadata {
         url: webpage_url,

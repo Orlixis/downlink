@@ -5,6 +5,7 @@ import { useDownlink } from "./hooks/useDownlink";
 import { QueueItemComponent } from "./components/QueueItem";
 import { SettingsModal } from "./components/SettingsModal";
 import { AdvancedOptions, DEFAULT_OPTIONS, type AdvancedOptionsState } from "./components/AdvancedOptions";
+import { PlaylistDialog } from "./components/PlaylistDialog";
 import type { PresetWithHint, UserSettings, FetchMetadataResult } from "./types";
 import { formatBytes, formatDuration } from "./types";
 import Image from "next/image";
@@ -46,6 +47,22 @@ export default function Home() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [advancedOptions, setAdvancedOptions] = useState<AdvancedOptionsState>(DEFAULT_OPTIONS);
+
+  // Playlist dialog state
+  const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
+  const [playlistDialogData, setPlaylistDialogData] = useState<{
+    url: string;
+    metadata: FetchMetadataResult;
+  } | null>(null);
+  const [playlistVideos, setPlaylistVideos] = useState<Array<{
+    id: string;
+    url: string;
+    title: string;
+    thumbnail_url?: string;
+    duration_seconds?: number;
+    uploader?: string;
+  }>>([]);
+  const [isLoadingPlaylistVideos, setIsLoadingPlaylistVideos] = useState(false);
 
   // Preview state - now supports multiple URLs
   const [urlPreviews, setUrlPreviews] = useState<Map<string, UrlPreview>>(new Map());
@@ -291,33 +308,33 @@ export default function Home() {
         }
       } else {
         // Single URL - use the global preset
-        const result = await downlink.addUrls(urlInput, {
-          preset_id: presetId,
-          output_dir: destination,
-          parent_id: null,
-          source_kind: previewData?.is_playlist ? "playlist_parent" : "single",
-          title: previewData?.title ?? null,
-          uploader: previewData?.uploader ?? null,
-          thumbnail_url: previewData?.thumbnail_url ?? null,
-          duration_seconds: previewData?.duration_seconds ?? null,
-        });
-
-        // If it's a playlist, expand it
-        if (previewData?.is_playlist && result.ids.length > 0) {
-          await downlink.expandPlaylist(extractedUrls[0], {
+        if (previewData?.is_playlist) {
+          // It's a playlist, open the dialog to ask the user what to do
+          setPlaylistDialogData({
+            url: extractedUrls[0],
+            metadata: previewData,
+          });
+          setPlaylistDialogOpen(true);
+        } else {
+          // It's a single video, add it directly
+          const result = await downlink.addUrls(urlInput, {
             preset_id: presetId,
             output_dir: destination,
+            parent_id: null,
+            source_kind: "single",
+            title: previewData?.title ?? null,
+            uploader: previewData?.uploader ?? null,
+            thumbnail_url: previewData?.thumbnail_url ?? null,
+            duration_seconds: previewData?.duration_seconds ?? null,
           });
+          allIds.push(...result.ids);
         }
-
-        allIds.push(...result.ids);
       }
 
-      // Auto-start if enabled
+      // Auto-start if enabled (and not a playlist that opened a dialog)
+      // Use startAllDownloads to properly respect concurrency limits
       if (settings?.general.auto_start !== false && allIds.length > 0) {
-        for (const id of allIds) {
-          await downlink.startDownload(id);
-        }
+        await downlink.startAllDownloads();
       }
 
       // Clear input
@@ -341,6 +358,125 @@ export default function Home() {
     destination,
     settings,
   ]);
+
+  // Load playlist videos when user wants to select specific videos
+  const handleLoadPlaylistVideos = useCallback(async () => {
+    if (!playlistDialogData) return;
+
+    setIsLoadingPlaylistVideos(true);
+    try {
+      // Use preview_playlist to get all videos without adding to queue
+      const result = await downlink.previewPlaylist(playlistDialogData.url);
+
+      if (result.videos && result.videos.length > 0) {
+        const videos = result.videos.map((video) => ({
+          id: video.id,
+          url: video.url,
+          title: video.title ?? "Untitled",
+          thumbnail_url: video.thumbnail_url ?? undefined,
+          duration_seconds: video.duration_seconds ?? undefined,
+          uploader: video.uploader ?? undefined,
+        }));
+        setPlaylistVideos(videos);
+      }
+    } catch (e) {
+      console.error("Failed to load playlist videos:", e);
+    } finally {
+      setIsLoadingPlaylistVideos(false);
+    }
+  }, [playlistDialogData, downlink]);
+
+  const handlePlaylistConfirm = useCallback(async (downloadPlaylist: boolean, selectedVideoIds?: string[]) => {
+    if (!playlistDialogData) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    const { url, metadata } = playlistDialogData;
+
+    try {
+      if (downloadPlaylist) {
+        // Check if user selected specific videos from the playlist
+        if (selectedVideoIds && selectedVideoIds.length > 0 && playlistVideos.length > 0) {
+          // Download only selected videos by their URLs
+          const selectedVideos = playlistVideos.filter((video) =>
+            selectedVideoIds.includes(video.id)
+          );
+
+          // Add each selected video individually
+          for (const video of selectedVideos) {
+            await downlink.addUrls(video.url, {
+              preset_id: presetId,
+              output_dir: destination,
+              parent_id: null,
+              source_kind: "single",
+              title: video.title ?? null,
+              uploader: video.uploader ?? null,
+              thumbnail_url: video.thumbnail_url ?? null,
+              duration_seconds: video.duration_seconds ?? null,
+            });
+          }
+
+          if (settings?.general.auto_start !== false) {
+            await downlink.startAllDownloads();
+          }
+        } else {
+          // Download entire playlist
+          const result = await downlink.addUrls(url, {
+            preset_id: presetId,
+            output_dir: destination,
+            parent_id: null,
+            source_kind: "playlist_parent",
+            title: metadata.playlist_title ?? metadata.title ?? null,
+            uploader: metadata.uploader ?? null,
+            thumbnail_url: metadata.thumbnail_url ?? null,
+            duration_seconds: null,
+          });
+
+          if (result.ids.length > 0) {
+            await downlink.expandPlaylist(url, {
+              preset_id: presetId,
+              output_dir: destination,
+            });
+
+            if (settings?.general.auto_start !== false) {
+              await downlink.startAllDownloads();
+            }
+          }
+        }
+      } else {
+        // Download single video from the playlist
+        const result = await downlink.addUrls(url, {
+          preset_id: presetId,
+          output_dir: destination,
+          parent_id: null,
+          source_kind: "single",
+          title: metadata.title ?? null,
+          uploader: metadata.uploader ?? null,
+          thumbnail_url: metadata.thumbnail_url ?? null,
+          duration_seconds: metadata.duration_seconds ?? null,
+        });
+
+        // Use startAllDownloads to properly respect concurrency limits
+        if (settings?.general.auto_start !== false && result.ids.length > 0) {
+          await downlink.startAllDownloads();
+        }
+      }
+
+      // Clear input and go to queue
+      setUrlInput("");
+      setUrlPreviews(new Map());
+      setTab("queue");
+
+    } catch (e) {
+      console.error("[Downlink] Failed to handle playlist action:", e);
+      setSubmitError(e instanceof Error ? e.message : "Failed to handle playlist action");
+    } finally {
+      setIsSubmitting(false);
+      setPlaylistDialogOpen(false);
+      setPlaylistDialogData(null);
+    }
+  }, [playlistDialogData, downlink, presetId, destination, settings]);
 
   const handleSaveSettings = useCallback(
     async (newSettings: UserSettings) => {
@@ -946,6 +1082,25 @@ export default function Home() {
         installAppUpdate={downlink.installAppUpdate}
         restartApp={downlink.restartApp}
       />
+
+      {/* Playlist Confirmation Dialog */}
+      {playlistDialogData && (
+        <PlaylistDialog
+          isOpen={playlistDialogOpen}
+          onClose={() => {
+            setPlaylistDialogOpen(false);
+            setPlaylistVideos([]);
+          }}
+          onConfirm={handlePlaylistConfirm}
+          playlistTitle={playlistDialogData.metadata.playlist_title ?? "this playlist"}
+          videoTitle={playlistDialogData.metadata.title ?? "this video"}
+          videoThumbnail={playlistDialogData.metadata.thumbnail_url ?? undefined}
+          playlistCount={playlistDialogData.metadata.playlist_count_hint ?? 0}
+          playlistVideos={playlistVideos}
+          isLoadingVideos={isLoadingPlaylistVideos}
+          onLoadPlaylistVideos={handleLoadPlaylistVideos}
+        />
+      )}
 
       {/* Advanced Options Modal */}
       <AdvancedOptions

@@ -131,19 +131,13 @@ async fn fetch_metadata_for_url(yt_dlp_path: &PathBuf, url: &str) -> Option<Fetc
     use tokio::process::Command;
 
     let mut cmd = Command::new(yt_dlp_path);
-    cmd.args([
-        "--dump-json",
-        "--no-warnings",
-        "--no-call-home",
-        "--no-playlist",
-        url,
-    ]);
+    cmd.args(["--dump-json", "--no-warnings", "--no-playlist", url]);
 
     // Hide console window on Windows
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = tokio::time::timeout(Duration::from_secs(15), cmd.output()).await;
+    let output = tokio::time::timeout(Duration::from_secs(45), cmd.output()).await;
 
     match output {
         Ok(Ok(output)) if output.status.success() => {
@@ -247,17 +241,6 @@ pub fn find_ffmpeg_binary() -> Option<PathBuf> {
     None
 }
 
-impl Default for DownloadConfig {
-    fn default() -> Self {
-        Self {
-            yt_dlp_path: find_ytdlp_binary(),
-            ffmpeg_path: find_ffmpeg_binary(),
-            max_concurrent: 2,
-            default_output_template: "%(title)s [%(id)s].%(ext)s".to_string(),
-        }
-    }
-}
-
 /// Preset definitions with yt-dlp arguments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preset {
@@ -345,10 +328,12 @@ pub struct ParsedProgress {
 /// Download Manager handles scheduling and execution of downloads.
 /// Uses lazy initialization to avoid spawning tasks before runtime is ready.
 pub struct DownloadManager {
-    config: DownloadConfig,
+    config: Arc<RwLock<DownloadConfig>>,
     db: Arc<Mutex<Db>>,
     event_tx: mpsc::Sender<DownlinkEvent>,
     active_downloads: Arc<RwLock<HashMap<Uuid, broadcast::Sender<()>>>>,
+    completion_tx: mpsc::Sender<()>,
+    completion_rx: Mutex<Option<mpsc::Receiver<()>>>,
 }
 
 impl DownloadManager {
@@ -359,33 +344,87 @@ impl DownloadManager {
         db: Arc<Mutex<Db>>,
         event_tx: mpsc::Sender<DownlinkEvent>,
     ) -> Self {
+        let (completion_tx, completion_rx) = mpsc::channel(32);
         Self {
-            config,
+            config: Arc::new(RwLock::new(config)),
             db,
             event_tx,
             active_downloads: Arc::new(RwLock::new(HashMap::new())),
+            completion_tx,
+            completion_rx: Mutex::new(Some(completion_rx)),
         }
+    }
+
+    /// Get the current download config.
+    pub fn config(&self) -> Arc<RwLock<DownloadConfig>> {
+        self.config.clone()
+    }
+
+    /// Update the download manager's configuration.
+    pub async fn update_config(&self, new_config: DownloadConfig) {
+        let mut config = self.config.write().await;
+        *config = new_config;
+    }
+
+    /// Spawns a long-lived task to listen for download completions and trigger new downloads.
+    pub fn start_completion_listener(self: &Arc<Self>) {
+        let self_clone = self.clone();
+        tokio::spawn(async move {
+            log::info!("Download completion listener started");
+            if let Some(mut rx) = self_clone.completion_rx.lock().await.take() {
+                while (rx.recv().await).is_some() {
+                    log::info!("Received download completion signal, checking for next in queue");
+                    if let Err(e) = self_clone.start_next_queued().await {
+                        log::error!("Failed to start next queued download: {}", e);
+                    }
+                }
+            }
+            log::warn!("Download completion listener stopped");
+        });
     }
 
     /// Start a download by ID.
     pub async fn start(&self, id: Uuid) -> Result<()> {
-        // Check concurrency limit
-        let active_count = self.active_downloads.read().await.len();
-        if active_count >= self.config.max_concurrent {
+        // Acquire write lock and check concurrency + register atomically
+        // This prevents race conditions where multiple downloads start simultaneously
+        {
+            let mut active = self.active_downloads.write().await;
+
+            // Check if already active
+            if active.contains_key(&id) {
+                log::warn!("Download {} is already active", id);
+                return Ok(());
+            }
+
+            // Check concurrency limit
+            let max_concurrent = self.config.read().await.max_concurrent;
+            if active.len() >= max_concurrent {
+                log::info!(
+                    "Concurrency limit reached ({}/{}), download {} will wait",
+                    active.len(),
+                    max_concurrent,
+                    id
+                );
+                return Ok(());
+            }
+
+            // Register as active IMMEDIATELY to prevent race conditions
+            // Create cancel channel and insert while holding the lock
+            let (cancel_tx, _) = broadcast::channel::<()>(1);
+            active.insert(id, cancel_tx);
             log::info!(
-                "Concurrency limit reached ({}/{}), download {} will wait",
-                active_count,
-                self.config.max_concurrent,
-                id
+                "Download {} registered as active ({}/{})",
+                id,
+                active.len(),
+                max_concurrent
             );
-            return Ok(());
         }
 
-        // Check if already active
-        if self.active_downloads.read().await.contains_key(&id) {
-            log::warn!("Download {} is already active", id);
-            return Ok(());
-        }
+        // Helper to remove from active downloads on early exit
+        let cleanup = || async {
+            self.active_downloads.write().await.remove(&id);
+            log::info!("Download {} removed from active (early exit)", id);
+        };
 
         // Get download info from DB
         let mut download_info = {
@@ -394,10 +433,12 @@ impl DownloadManager {
                 Ok(Some(row)) => row,
                 Ok(None) => {
                     log::error!("Download {} not found in database", id);
+                    cleanup().await;
                     return Err(anyhow!("Download not found"));
                 }
                 Err(e) => {
                     log::error!("Failed to get download {}: {}", id, e);
+                    cleanup().await;
                     return Err(anyhow!("Database error: {}", e));
                 }
             }
@@ -412,10 +453,12 @@ impl DownloadManager {
                     id,
                     download_info.status
                 );
+                cleanup().await;
                 return Ok(());
             }
         }
 
+        let yt_dlp_path = self.config.read().await.yt_dlp_path.clone();
         // If the download doesn't have a title, fetch metadata first
         if download_info.title.is_none() {
             log::info!("Download {} has no title, fetching metadata first", id);
@@ -448,7 +491,7 @@ impl DownloadManager {
 
             // Fetch metadata using yt-dlp
             if let Some(metadata) =
-                fetch_metadata_for_url(&self.config.yt_dlp_path, &download_info.source_url).await
+                fetch_metadata_for_url(&yt_dlp_path, &download_info.source_url).await
             {
                 log::info!("Fetched metadata for {}: title={:?}", id, metadata.title);
 
@@ -489,12 +532,22 @@ impl DownloadManager {
             }
         }
 
-        // Create cancel channel
-        let (cancel_tx, _) = broadcast::channel::<()>(1);
-        self.active_downloads
-            .write()
-            .await
-            .insert(id, cancel_tx.clone());
+        // Get the cancel_tx from active_downloads (we already inserted it)
+        let cancel_tx = {
+            let active = self.active_downloads.read().await;
+            active.get(&id).cloned()
+        };
+
+        let cancel_tx = match cancel_tx {
+            Some(tx) => tx,
+            None => {
+                log::error!(
+                    "Download {} not found in active_downloads after registration",
+                    id
+                );
+                return Err(anyhow!("Internal error: download not registered"));
+            }
+        };
 
         // Update status to Downloading
         {
@@ -515,6 +568,7 @@ impl DownloadManager {
         let source_url = download_info.source_url.clone();
         let preset_id = download_info.preset_id.clone();
         let output_dir = download_info.output_dir.clone();
+        let completion_tx = self.completion_tx.clone();
 
         tokio::spawn(async move {
             let result = execute_download(
@@ -522,7 +576,7 @@ impl DownloadManager {
                 &source_url,
                 &preset_id,
                 &output_dir,
-                &config,
+                config,
                 cancel_tx.subscribe(),
                 event_tx.clone(),
             )
@@ -544,11 +598,13 @@ impl DownloadManager {
                         .await;
                 }
                 Err(DownloadError::Canceled) => {
-                    let _ = db_guard.set_status(id, DownloadStatus::Canceled, Some("Canceled"));
+                    // Status already set by cancel() - just emit event
+                    // Don't override status in case it was set to something else
                     let _ = event_tx.send(DownlinkEvent::DownloadCanceled { id }).await;
                 }
                 Err(DownloadError::Stopped) => {
-                    let _ = db_guard.set_status(id, DownloadStatus::Stopped, Some("Stopped"));
+                    // Status already set by stop() - just emit event
+                    // Don't override status in case it was set to something else
                     let _ = event_tx.send(DownlinkEvent::DownloadStopped { id }).await;
                 }
                 Err(DownloadError::Failed {
@@ -567,6 +623,9 @@ impl DownloadManager {
                         .await;
                 }
             }
+
+            // Signal that a download slot has been freed up
+            let _ = completion_tx.send(()).await;
         });
 
         Ok(())
@@ -574,21 +633,41 @@ impl DownloadManager {
 
     /// Stop a download (resumable).
     pub async fn stop(&self, id: Uuid) -> Result<()> {
+        // First, update the DB status to Stopped BEFORE sending cancel signal
+        // This ensures the completion handler sees "Stopped" status
+        {
+            let mut db = self.db.lock().await;
+            let _ = db.set_status(id, DownloadStatus::Stopped, Some("Stopped by user"));
+        }
+
+        // Now send the cancel signal to the running process
         if let Some(cancel_tx) = self.active_downloads.read().await.get(&id) {
             let _ = cancel_tx.send(());
             log::info!("Sent stop signal to download {}", id);
+        } else {
+            log::info!("Download {} not active, just updated status to Stopped", id);
         }
         Ok(())
     }
 
     /// Cancel a download (non-resumable, cleans up temp files).
     pub async fn cancel(&self, id: Uuid) -> Result<()> {
-        // Stop the download first
-        self.stop(id).await?;
+        // First, update the DB status to Canceled BEFORE sending cancel signal
+        {
+            let mut db = self.db.lock().await;
+            let _ = db.set_status(id, DownloadStatus::Canceled, Some("Canceled by user"));
+        }
 
-        // Update status to canceled
-        let mut db = self.db.lock().await;
-        let _ = db.set_status(id, DownloadStatus::Canceled, Some("Canceled"));
+        // Now send the cancel signal to the running process
+        if let Some(cancel_tx) = self.active_downloads.read().await.get(&id) {
+            let _ = cancel_tx.send(());
+            log::info!("Sent cancel signal to download {}", id);
+        } else {
+            log::info!(
+                "Download {} not active, just updated status to Canceled",
+                id
+            );
+        }
         Ok(())
     }
 
@@ -620,6 +699,51 @@ impl DownloadManager {
         }
         Ok(())
     }
+
+    /// Checks for and starts the next queued download if concurrency limits allow.
+    /// Only starts downloads that are in "Queued" or "Ready" state (not Stopped/Canceled).
+    pub async fn start_next_queued(&self) -> Result<()> {
+        let max_concurrent = self.config.read().await.max_concurrent;
+        let active_count = self.active_downloads.read().await.len();
+
+        if active_count >= max_concurrent {
+            log::info!(
+                "Concurrency limit reached ({}/{}), not starting next queued download",
+                active_count,
+                max_concurrent
+            );
+            return Ok(());
+        }
+
+        let next_id = {
+            let db = self.db.lock().await;
+            // Only get downloads in Queued status - NOT Stopped or other states
+            db.get_next_queued_download_id()
+                .map_err(|e| anyhow!("Failed to get next queued download: {}", e))?
+        };
+
+        if let Some(id) = next_id {
+            // Double-check the download is still in a startable state
+            // This prevents race conditions where a stopped download gets restarted
+            let should_start = {
+                let mut db = self.db.lock().await;
+                if let Ok(Some(row)) = db.get_download(id) {
+                    matches!(row.status, DownloadStatus::Queued | DownloadStatus::Ready)
+                } else {
+                    false
+                }
+            };
+
+            if should_start {
+                log::info!("Auto-starting next queued download: {}", id);
+                self.start(id).await?;
+            } else {
+                log::info!("Download {} is no longer in startable state, skipping", id);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Error types for download execution.
@@ -640,30 +764,32 @@ async fn execute_download(
     url: &str,
     preset_id: &str,
     output_dir: &str,
-    config: &DownloadConfig,
+    config: Arc<RwLock<DownloadConfig>>,
     mut cancel_rx: broadcast::Receiver<()>,
     event_tx: mpsc::Sender<DownlinkEvent>,
 ) -> Result<Option<String>, DownloadError> {
     let preset =
         Preset::get_by_id(preset_id).unwrap_or_else(|| Preset::builtin_presets()[0].clone());
 
+    let config_guard = config.read().await;
+
     // Build yt-dlp command
     let mut args = vec![
         "--newline".to_string(),
         "--no-warnings".to_string(),
-        "--no-call-home".to_string(),
+        "--no-playlist".to_string(), // Always download single video, never expand playlist during download
         "--progress".to_string(),
         "--progress-template".to_string(),
         "download:[downlink] %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s %(progress._total_bytes_str)s".to_string(),
         "-o".to_string(),
-        format!("{}/%(title)s [%(id)s].%(ext)s", output_dir),
+        format!("{}/{}", output_dir, config_guard.default_output_template),
     ];
 
     // Add preset args
     args.extend(preset.yt_dlp_args.clone());
 
     // Add ffmpeg location if configured
-    if let Some(ref ffmpeg_path) = config.ffmpeg_path {
+    if let Some(ref ffmpeg_path) = config_guard.ffmpeg_path {
         args.push("--ffmpeg-location".to_string());
         args.push(ffmpeg_path.to_string_lossy().to_string());
     }
@@ -673,7 +799,7 @@ async fn execute_download(
 
     log::info!("Starting download {} with args: {:?}", id, args);
 
-    let mut cmd = Command::new(&config.yt_dlp_path);
+    let mut cmd = Command::new(&config_guard.yt_dlp_path);
     cmd.args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

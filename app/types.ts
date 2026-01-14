@@ -110,6 +110,23 @@ export interface ExpandPlaylistResult {
   count: number;
 }
 
+// Preview playlist video entry
+export interface PlaylistVideoPreview {
+  id: string;
+  url: string;
+  title: string | null;
+  uploader: string | null;
+  duration_seconds: number | null;
+  thumbnail_url: string | null;
+}
+
+// Preview playlist result (without adding to queue)
+export interface PreviewPlaylistResult {
+  playlist_title: string | null;
+  videos: PlaylistVideoPreview[];
+  count: number;
+}
+
 // Tool status
 export type ToolStatus = "ok" | "outdated" | "missing" | "broken";
 
