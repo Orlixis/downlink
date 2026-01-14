@@ -2,6 +2,17 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
+import {
+  X,
+  Play,
+  ListVideo,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Loader2,
+  Download,
+  Video,
+} from "lucide-react";
 
 interface PlaylistVideo {
   id: string;
@@ -19,7 +30,6 @@ interface PlaylistDialogProps {
   videoTitle: string;
   videoThumbnail?: string;
   playlistCount: number;
-  // Optional: If provided, shows video selection UI
   playlistVideos?: PlaylistVideo[];
   isLoadingVideos?: boolean;
   onLoadPlaylistVideos?: () => void;
@@ -63,7 +73,7 @@ export function PlaylistDialog({
     }
   }, [isOpen]);
 
-  // When videos are loaded, select all by default
+  // Select all videos when playlist is loaded
   useEffect(() => {
     if (playlistVideos.length > 0 && selectAll) {
       setSelectedVideos(new Set(playlistVideos.map((v) => v.id)));
@@ -94,18 +104,13 @@ export function PlaylistDialog({
   }, []);
 
   const handleChoosePlaylist = useCallback(() => {
-    if (onLoadPlaylistVideos) {
-      setViewMode("select");
+    setViewMode("select");
+    if (onLoadPlaylistVideos && playlistVideos.length === 0) {
       onLoadPlaylistVideos();
-    } else {
-      // No video loading capability, just download all
-      onConfirm(true);
     }
-  }, [onLoadPlaylistVideos, onConfirm]);
+  }, [onLoadPlaylistVideos, playlistVideos.length]);
 
   const handleDownloadSelected = useCallback(() => {
-    if (selectedVideos.size === 0) return;
-
     if (selectedVideos.size === playlistVideos.length) {
       // All selected, download entire playlist
       onConfirm(true);
@@ -136,26 +141,12 @@ export function PlaylistDialog({
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center">
-                    <svg
-                      className="h-8 w-8 text-zinc-600"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                      />
-                    </svg>
+                    <ListVideo className="h-8 w-8 text-zinc-600" />
                   </div>
                 )}
                 {/* Playlist badge */}
                 <div className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                  <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M2 4a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1zm0 4a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1zm0 4a1 1 0 011-1h7a1 1 0 110 2H3a1 1 0 01-1-1z" />
-                  </svg>
+                  <ListVideo className="h-3 w-3" />
                   {playlistCount}
                 </div>
               </div>
@@ -174,9 +165,7 @@ export function PlaylistDialog({
               className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
               aria-label="Close dialog"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="h-5 w-5" />
             </button>
           </div>
         </div>
@@ -209,16 +198,12 @@ export function PlaylistDialog({
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
-                        <svg className="h-8 w-8 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M8 5v14l11-7z" />
-                        </svg>
+                        <Video className="h-8 w-8 text-zinc-500" />
                       </div>
                     )}
                     {/* Single video indicator */}
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
+                      <Play className="h-8 w-8 text-white" fill="currentColor" />
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
@@ -234,14 +219,7 @@ export function PlaylistDialog({
                       Download only this video
                     </div>
                   </div>
-                  <svg
-                    className="h-5 w-5 text-zinc-500 group-hover:text-white transition-colors"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                  <ChevronRight className="h-5 w-5 text-zinc-500 group-hover:text-white transition-colors" />
                 </div>
               </button>
 
@@ -267,9 +245,7 @@ export function PlaylistDialog({
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
-                          <svg className="h-8 w-8 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                          </svg>
+                          <ListVideo className="h-8 w-8 text-zinc-500" />
                         </div>
                       )}
                       {/* Playlist count overlay */}
@@ -294,14 +270,7 @@ export function PlaylistDialog({
                       Choose which videos to include →
                     </div>
                   </div>
-                  <svg
-                    className="h-5 w-5 text-blue-400 transition-transform group-hover:translate-x-1"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                  <ChevronRight className="h-5 w-5 text-blue-400 transition-transform group-hover:translate-x-1" />
                 </div>
               </button>
             </div>
@@ -315,9 +284,7 @@ export function PlaylistDialog({
                 onClick={() => setViewMode("choice")}
                 className="flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <ChevronLeft className="h-4 w-4" />
                 Back
               </button>
               <div className="flex items-center gap-4">
@@ -337,53 +304,37 @@ export function PlaylistDialog({
             <div className="flex-1 overflow-y-auto p-4">
               {isLoadingVideos ? (
                 <div className="flex flex-col items-center justify-center py-12">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-500" />
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                   <p className="mt-4 text-sm text-zinc-400">Loading playlist videos...</p>
                 </div>
               ) : playlistVideos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
-                  <svg className="h-12 w-12 text-zinc-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-sm text-zinc-400">Could not load playlist videos</p>
-                  <button
-                    type="button"
-                    onClick={onLoadPlaylistVideos}
-                    className="mt-4 text-sm font-medium text-blue-400 hover:text-blue-300"
-                  >
-                    Try Again
-                  </button>
+                  <ListVideo className="h-12 w-12 text-zinc-700" />
+                  <p className="mt-4 text-sm text-zinc-400">No videos found in playlist</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {playlistVideos.map((video, index) => (
+                  {playlistVideos.map((video) => (
                     <button
                       key={video.id}
                       type="button"
                       onClick={() => handleToggleVideo(video.id)}
                       className={`w-full flex items-center gap-3 rounded-lg p-2 text-left transition-all ${selectedVideos.has(video.id)
-                        ? "bg-blue-500/20 border border-blue-500/50"
-                        : "bg-zinc-800/50 border border-transparent hover:bg-zinc-800"
+                          ? "bg-blue-500/20 border border-blue-500/50"
+                          : "bg-zinc-800/50 border border-transparent hover:bg-zinc-800"
                         }`}
                     >
                       {/* Checkbox */}
                       <div
                         className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition-colors ${selectedVideos.has(video.id)
-                          ? "border-blue-500 bg-blue-500"
-                          : "border-zinc-600 bg-transparent"
+                            ? "border-blue-500 bg-blue-500"
+                            : "border-zinc-600 bg-transparent"
                           }`}
                       >
                         {selectedVideos.has(video.id) && (
-                          <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
+                          <Check className="h-3 w-3 text-white" />
                         )}
                       </div>
-
-                      {/* Index */}
-                      <span className="w-6 text-xs text-zinc-500 text-center flex-shrink-0">
-                        {index + 1}
-                      </span>
 
                       {/* Thumbnail */}
                       <div className="relative h-12 w-20 flex-shrink-0 overflow-hidden rounded bg-zinc-700">
@@ -397,26 +348,23 @@ export function PlaylistDialog({
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center">
-                            <svg className="h-5 w-5 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M8 5v14l11-7z" />
-                            </svg>
+                            <Video className="h-5 w-5 text-zinc-500" />
                           </div>
                         )}
                         {video.duration_seconds && (
-                          <div className="absolute bottom-0.5 right-0.5 rounded bg-black/80 px-1 py-0.5 text-[10px] text-white">
+                          <div className="absolute bottom-0.5 right-0.5 rounded bg-black/80 px-1 text-[10px] text-white">
                             {formatDuration(video.duration_seconds)}
                           </div>
                         )}
                       </div>
 
-                      {/* Title */}
+                      {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-medium truncate ${selectedVideos.has(video.id) ? "text-white" : "text-zinc-300"
-                          }`}>
+                        <div className="font-medium text-white text-sm truncate">
                           {video.title}
                         </div>
                         {video.uploader && (
-                          <div className="text-xs text-zinc-500 truncate">
+                          <div className="text-xs text-zinc-400 truncate">
                             {video.uploader}
                           </div>
                         )}
@@ -435,9 +383,7 @@ export function PlaylistDialog({
                 disabled={selectedVideos.size === 0}
                 className="btn-brand w-full rounded-xl py-3 px-4 flex items-center justify-center gap-2"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
+                <Download className="h-5 w-5" />
                 Download {selectedVideos.size} {selectedVideos.size === 1 ? "Video" : "Videos"}
               </button>
             </div>
