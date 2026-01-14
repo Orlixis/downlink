@@ -2,51 +2,262 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDownlink } from "./hooks/useDownlink";
-import { QueueItemComponent } from "./components/QueueItem";
 import { SettingsModal } from "./components/SettingsModal";
-import { AdvancedOptions, DEFAULT_OPTIONS, type AdvancedOptionsState } from "./components/AdvancedOptions";
 import { PlaylistDialog } from "./components/PlaylistDialog";
-import type { PresetWithHint, UserSettings, FetchMetadataResult } from "./types";
+import type { PresetWithHint, UserSettings, FetchMetadataResult, QueueItem } from "./types";
 import { formatBytes, formatDuration } from "./types";
 import Image from "next/image";
 
-// Preview data for multiple URLs
+// Preview data for URLs
 interface UrlPreview {
   url: string;
   loading: boolean;
   data: FetchMetadataResult | null;
   error: string | null;
-  presetId: string; // Per-URL preset selection
+  presetId: string;
 }
 
 const PRESETS: PresetWithHint[] = [
-  { id: "recommended_best", name: "Recommended (Best)", hint: "Best quality, merges automatically" },
-  { id: "mp4_1080p", name: "1080p MP4", hint: "Best compatibility" },
-  { id: "mp4_best", name: "Best MP4", hint: "Prefer MP4 container" },
-  { id: "audio_m4a", name: "Audio M4A", hint: "Fastest, great quality" },
-  { id: "audio_mp3_320", name: "Audio MP3 320", hint: "Most compatible, larger file" },
+  { id: "recommended_best", name: "Best Quality", hint: "Highest quality available" },
+  { id: "mp4_1080p", name: "1080p MP4", hint: "Full HD, compatible" },
+  { id: "mp4_best", name: "Best MP4", hint: "Best quality in MP4" },
+  { id: "audio_m4a", name: "Audio Only", hint: "M4A format" },
+  { id: "audio_mp3_320", name: "MP3 320kbps", hint: "High quality audio" },
 ];
 
+// Circular progress component like PullTube
+function CircularProgress({ percent, size = 120 }: { percent: number; size?: number }) {
+  const strokeWidth = 4;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (percent / 100) * circumference;
+
+  return (
+    <svg width={size} height={size} className="transform -rotate-90">
+      {/* Background circle */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        fill="none"
+        className="text-zinc-700"
+      />
+      {/* Progress circle */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        className="text-blue-500 transition-all duration-300"
+      />
+    </svg>
+  );
+}
+
+// Download item component - compact list style like Folx
+function DownloadItem({
+  item,
+  onStop,
+  onCancel,
+  onRetry,
+  onOpen,
+  onOpenFolder,
+}: {
+  item: QueueItem;
+  onStop: (id: string) => void;
+  onCancel: (id: string) => void;
+  onRetry: (id: string) => void;
+  onOpen: (path: string) => void;
+  onOpenFolder: (path: string) => void;
+}) {
+  const isActive = item.status === "downloading" || item.status === "fetching";
+  const isDone = item.status === "done";
+  const isFailed = item.status === "failed";
+  const isStopped = item.status === "stopped";
+  const progress = item.progress_percent ?? 0;
+
+  return (
+    <div className="group flex items-center gap-3 rounded-xl bg-zinc-800/50 p-3 transition-all hover:bg-zinc-800">
+      {/* Thumbnail with progress overlay */}
+      <div className="relative h-14 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-700">
+        {item.thumbnail_url ? (
+          <Image
+            src={item.thumbnail_url}
+            alt={item.title || "Video"}
+            fill
+            className="object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <svg className="h-6 w-6 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+        )}
+        {/* Progress overlay for active downloads */}
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+            <div className="relative h-8 w-8">
+              <CircularProgress percent={progress} size={32} />
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                {Math.round(progress)}%
+              </span>
+            </div>
+          </div>
+        )}
+        {/* Done overlay */}
+        {isDone && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+            <svg className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        )}
+        {/* Failed overlay */}
+        {isFailed && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+            <svg className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-white truncate text-sm">
+          {item.title || "Untitled"}
+        </div>
+        <div className="text-xs text-zinc-400 truncate">
+          {item.uploader || item.source_url}
+        </div>
+        {/* Status line */}
+        <div className="flex items-center gap-2 mt-1">
+          {isActive && (
+            <>
+              <div className="h-1 flex-1 max-w-[120px] rounded-full bg-zinc-700 overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-zinc-400">
+                {item.speed_bps ? `${formatBytes(item.speed_bps)}/s` : ""}
+                {item.eta_seconds ? ` · ${Math.ceil(item.eta_seconds / 60)}m left` : ""}
+              </span>
+            </>
+          )}
+          {isDone && (
+            <span className="text-[10px] text-green-400 font-medium">Completed</span>
+          )}
+          {isFailed && (
+            <span className="text-[10px] text-red-400 font-medium">Failed</span>
+          )}
+          {isStopped && (
+            <span className="text-[10px] text-yellow-400 font-medium">Paused</span>
+          )}
+          {item.status === "queued" && (
+            <span className="text-[10px] text-zinc-500 font-medium">Queued</span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {isActive && (
+          <button
+            onClick={() => onStop(item.id)}
+            className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+            title="Pause"
+          >
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+            </svg>
+          </button>
+        )}
+        {(isStopped || item.status === "queued") && (
+          <button
+            onClick={() => onRetry(item.id)}
+            className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+            title="Resume"
+          >
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        )}
+        {isFailed && (
+          <button
+            onClick={() => onRetry(item.id)}
+            className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+            title="Retry"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        )}
+        {isDone && item.final_path && (
+          <>
+            <button
+              onClick={() => onOpen(item.final_path!)}
+              className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+              title="Open"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => onOpenFolder(item.final_path!)}
+              className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+              title="Show in folder"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => onCancel(item.id)}
+          className="p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-400 hover:text-red-400 transition-colors"
+          title="Remove"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  // Downlink hook
   const downlink = useDownlink();
 
   // Form state
   const [urlInput, setUrlInput] = useState("");
   const [destination, setDestination] = useState("");
   const [presetId, setPresetId] = useState<string>("recommended_best");
-  const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState(false);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
-  const [subtitlesLanguage, setSubtitlesLanguage] = useState("en");
+  const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState(false);
 
   // UI state
-  const [tab, setTab] = useState<"queue" | "history">("queue");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [advancedOptions, setAdvancedOptions] = useState<AdvancedOptionsState>(DEFAULT_OPTIONS);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Playlist dialog state
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
@@ -64,11 +275,11 @@ export default function Home() {
   }>>([]);
   const [isLoadingPlaylistVideos, setIsLoadingPlaylistVideos] = useState(false);
 
-  // Preview state - now supports multiple URLs
+  // Preview state
   const [urlPreviews, setUrlPreviews] = useState<Map<string, UrlPreview>>(new Map());
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Extract URLs from input - must be defined before dependent useMemos
+  // Extract URLs from input
   const extractedUrls = useMemo(() => {
     if (!urlInput.trim()) return [];
     const matches = urlInput.match(/https?:\/\/[^\s]+/g) ?? [];
@@ -84,9 +295,7 @@ export default function Home() {
     return out;
   }, [urlInput]);
 
-  const hasMultipleUrls = extractedUrls.length > 1;
-
-  // Single preview data (for backwards compatibility with single URL)
+  // Single preview data
   const previewData = useMemo(() => {
     if (extractedUrls.length === 1) {
       return urlPreviews.get(extractedUrls[0])?.data ?? null;
@@ -98,7 +307,7 @@ export default function Home() {
     if (extractedUrls.length === 1) {
       return urlPreviews.get(extractedUrls[0])?.loading ?? false;
     }
-    return Array.from(urlPreviews.values()).some(p => p.loading);
+    return false;
   }, [extractedUrls, urlPreviews]);
 
   const previewError = useMemo(() => {
@@ -108,264 +317,251 @@ export default function Home() {
     return null;
   }, [extractedUrls, urlPreviews]);
 
-  // Derived state
-  const selectedPreset = useMemo(
-    () => PRESETS.find((p) => p.id === presetId) ?? PRESETS[0],
-    [presetId]
-  );
-
-  // Load default destination on mount
+  // Load settings on mount
   useEffect(() => {
     if (!downlink.isTauri) return;
-
-    const loadDefaults = async () => {
+    (async () => {
       try {
-        const defaultDir = await downlink.getDefaultDownloadDir();
-        setDestination(defaultDir);
-
-        const loadedSettings = await downlink.getSettings();
-        setSettings(loadedSettings);
-
-        if (loadedSettings.general.default_preset) {
-          setPresetId(loadedSettings.general.default_preset);
-        }
-        if (loadedSettings.sponsorblock.enabled_by_default) {
-          setSponsorBlockEnabled(true);
-        }
-        if (loadedSettings.subtitles.enabled_by_default) {
-          setSubtitlesEnabled(true);
-          setSubtitlesLanguage(loadedSettings.subtitles.default_language || "en");
-        }
+        const s = await downlink.getSettings();
+        setSettings(s);
+        setDestination(s.general.download_folder);
+        setPresetId(s.general.default_preset);
       } catch (e) {
-        console.error("Failed to load defaults:", e);
+        console.error("Failed to load settings:", e);
+      }
+    })();
+  }, [downlink.isTauri, downlink.getSettings]);
+
+  // Global keyboard shortcut for Cmd+V / Ctrl+V
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      // Check for Cmd+V (Mac) or Ctrl+V (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+        // Only handle if not already focused on an input
+        if (document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+          e.preventDefault();
+          try {
+            const text = await navigator.clipboard.readText();
+            if (text && text.includes("http")) {
+              setUrlInput(text);
+              inputRef.current?.focus();
+            }
+          } catch {
+            // Clipboard access denied, ignore
+          }
+        }
       }
     };
 
-    loadDefaults();
-  }, [downlink.isTauri]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
-  // Auto-resize textarea based on content
-  const adjustTextareaHeight = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const newHeight = Math.min(Math.max(textarea.scrollHeight, 38), 150);
-      textarea.style.height = `${newHeight}px`;
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    // Check for URLs in dropped data
+    const text = e.dataTransfer.getData("text/plain") || e.dataTransfer.getData("text/uri-list");
+    if (text && text.includes("http")) {
+      setUrlInput(text);
+      inputRef.current?.focus();
     }
   }, []);
 
+  // Auto-fetch preview when URL changes
   useEffect(() => {
-    adjustTextareaHeight();
-  }, [urlInput, adjustTextareaHeight]);
+    if (!downlink.isTauri || extractedUrls.length !== 1) return;
 
-  // Auto-fetch preview for all URLs
-  useEffect(() => {
-    if (!downlink.isTauri || extractedUrls.length === 0) {
-      setUrlPreviews(new Map());
-      return;
-    }
-
-    // Initialize previews for new URLs
-    const newPreviews = new Map<string, UrlPreview>();
-    const urlsToFetch: string[] = [];
-
-    for (const url of extractedUrls) {
-      const existing = urlPreviews.get(url);
-      if (existing) {
-        newPreviews.set(url, existing);
-      } else {
-        newPreviews.set(url, { url, loading: true, data: null, error: null, presetId: presetId });
-        urlsToFetch.push(url);
-      }
-    }
-
-    // Remove previews for URLs no longer in the list
-    setUrlPreviews(newPreviews);
-
-    // Fetch metadata for new URLs
-    if (urlsToFetch.length === 0) return;
+    const url = extractedUrls[0];
+    const existing = urlPreviews.get(url);
+    if (existing) return;
 
     let cancelled = false;
 
-    const fetchAllPreviews = async () => {
-      for (const url of urlsToFetch) {
-        if (cancelled) break;
+    const fetchPreview = async () => {
+      setUrlPreviews((prev) => {
+        const updated = new Map(prev);
+        updated.set(url, { url, loading: true, data: null, error: null, presetId });
+        return updated;
+      });
 
-        try {
-          const result = await downlink.fetchMetadata(url, {
-            preset_id: presetId,
-            output_dir: destination,
+      try {
+        const result = await downlink.fetchMetadata(url, {
+          preset_id: presetId,
+          output_dir: destination,
+        });
+        if (!cancelled) {
+          setUrlPreviews((prev) => {
+            const updated = new Map(prev);
+            updated.set(url, { url, loading: false, data: result, error: null, presetId });
+            return updated;
           });
-          if (!cancelled) {
-            setUrlPreviews(prev => {
-              const updated = new Map(prev);
-              const existing = prev.get(url);
-              updated.set(url, { url, loading: false, data: result, error: null, presetId: existing?.presetId ?? presetId });
-              return updated;
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setUrlPreviews((prev) => {
+            const updated = new Map(prev);
+            updated.set(url, {
+              url,
+              loading: false,
+              data: null,
+              error: e instanceof Error ? e.message : "Failed to fetch",
+              presetId,
             });
-          }
-        } catch (e) {
-          if (!cancelled) {
-            setUrlPreviews(prev => {
-              const updated = new Map(prev);
-              const existing = prev.get(url);
-              updated.set(url, {
-                url,
-                loading: false,
-                data: null,
-                error: e instanceof Error ? e.message : "Failed to fetch",
-                presetId: existing?.presetId ?? presetId,
-              });
-              return updated;
-            });
-          }
+            return updated;
+          });
         }
       }
     };
 
-    const timeout = setTimeout(fetchAllPreviews, 500);
+    const timeout = setTimeout(fetchPreview, 500);
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [downlink.isTauri, extractedUrls.join(','), presetId, destination]);
+  }, [downlink.isTauri, extractedUrls.join(","), presetId, destination]);
 
-  // Handlers
-  const handlePasteClick = useCallback(async () => {
+  // Handle paste button
+  const handlePaste = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
       setUrlInput(text);
+      inputRef.current?.focus();
     } catch {
-      const el = document.getElementById("downlink-url") as HTMLInputElement | null;
-      el?.focus();
+      inputRef.current?.focus();
     }
   }, []);
 
-  // Handler to update preset for a specific URL
-  const handleUrlPresetChange = useCallback((url: string, newPresetId: string) => {
-    setUrlPreviews(prev => {
-      const updated = new Map(prev);
-      const existing = prev.get(url);
-      if (existing) {
-        updated.set(url, { ...existing, presetId: newPresetId });
-      }
-      return updated;
-    });
-  }, []);
+  // Handle download
+  const handleDownload = useCallback(async () => {
+    if (!urlInput.trim() || isSubmitting) return;
 
-  // Handler to remove a URL from the input and preview list
-  const handleRemoveUrl = useCallback((urlToRemove: string) => {
-    // Remove from the text input
-    setUrlInput(prev => {
-      // Split by whitespace, filter out the URL, rejoin
-      const urls = prev.match(/https?:\/\/[^\s]+/g) ?? [];
-      const filtered = urls.filter(u => u !== urlToRemove);
-      return filtered.join(' ');
-    });
-    // Remove from preview map
-    setUrlPreviews(prev => {
-      const updated = new Map(prev);
-      updated.delete(urlToRemove);
-      return updated;
-    });
-  }, []);
-
-  const handleAddToQueue = useCallback(async () => {
-    if (!downlink.isTauri || extractedUrls.length === 0) return;
+    // Check if it's a playlist
+    if (previewData?.is_playlist && extractedUrls.length === 1) {
+      setPlaylistDialogData({
+        url: extractedUrls[0],
+        metadata: previewData,
+      });
+      setPlaylistDialogOpen(true);
+      return;
+    }
 
     setIsSubmitting(true);
-    setSubmitError(null);
-
     try {
-      const allIds: string[] = [];
+      const result = await downlink.addUrls(urlInput, {
+        preset_id: presetId,
+        output_dir: destination,
+        parent_id: null,
+        source_kind: "single",
+        title: previewData?.title ?? null,
+        uploader: previewData?.uploader ?? null,
+        thumbnail_url: previewData?.thumbnail_url ?? null,
+        duration_seconds: previewData?.duration_seconds ?? null,
+      });
 
-      // For multiple URLs, submit each with its own preset
-      if (hasMultipleUrls) {
-        for (const url of extractedUrls) {
-          const preview = urlPreviews.get(url);
-          const urlPresetId = preview?.presetId ?? presetId;
-
-          const result = await downlink.addUrls(url, {
-            preset_id: urlPresetId,
-            output_dir: destination,
-            parent_id: null,
-            source_kind: preview?.data?.is_playlist ? "playlist_parent" : "single",
-            title: preview?.data?.title ?? null,
-            uploader: preview?.data?.uploader ?? null,
-            thumbnail_url: preview?.data?.thumbnail_url ?? null,
-            duration_seconds: preview?.data?.duration_seconds ?? null,
-          });
-
-          // If it's a playlist, expand it
-          if (preview?.data?.is_playlist && result.ids.length > 0) {
-            await downlink.expandPlaylist(url, {
-              preset_id: urlPresetId,
-              output_dir: destination,
-            });
-          }
-
-          allIds.push(...result.ids);
-        }
-      } else {
-        // Single URL - use the global preset
-        if (previewData?.is_playlist) {
-          // It's a playlist, open the dialog to ask the user what to do
-          setPlaylistDialogData({
-            url: extractedUrls[0],
-            metadata: previewData,
-          });
-          setPlaylistDialogOpen(true);
-        } else {
-          // It's a single video, add it directly
-          const result = await downlink.addUrls(urlInput, {
-            preset_id: presetId,
-            output_dir: destination,
-            parent_id: null,
-            source_kind: "single",
-            title: previewData?.title ?? null,
-            uploader: previewData?.uploader ?? null,
-            thumbnail_url: previewData?.thumbnail_url ?? null,
-            duration_seconds: previewData?.duration_seconds ?? null,
-          });
-          allIds.push(...result.ids);
-        }
-      }
-
-      // Auto-start if enabled (and not a playlist that opened a dialog)
-      // Use startAllDownloads to properly respect concurrency limits
-      if (settings?.general.auto_start !== false && allIds.length > 0) {
+      if (settings?.general.auto_start !== false && result.ids.length > 0) {
         await downlink.startAllDownloads();
       }
 
-      // Clear input
       setUrlInput("");
       setUrlPreviews(new Map());
-      setTab("queue");
     } catch (e) {
-      console.error("[Downlink] Failed to add to queue:", e);
-      setSubmitError(e instanceof Error ? e.message : "Failed to add to queue");
+      console.error("Failed to add download:", e);
     } finally {
       setIsSubmitting(false);
     }
-  }, [
-    downlink,
-    extractedUrls,
-    hasMultipleUrls,
-    urlPreviews,
-    previewData,
-    urlInput,
-    presetId,
-    destination,
-    settings,
-  ]);
+  }, [urlInput, isSubmitting, previewData, extractedUrls, downlink, presetId, destination, settings]);
 
-  // Load playlist videos when user wants to select specific videos
+  // Handle playlist confirm
+  const handlePlaylistConfirm = useCallback(async (downloadPlaylist: boolean, selectedVideoIds?: string[]) => {
+    if (!playlistDialogData) return;
+
+    setIsSubmitting(true);
+    const { url, metadata } = playlistDialogData;
+
+    try {
+      if (downloadPlaylist) {
+        if (selectedVideoIds && selectedVideoIds.length > 0 && playlistVideos.length > 0) {
+          const selectedVideos = playlistVideos.filter((video) =>
+            selectedVideoIds.includes(video.id)
+          );
+
+          for (const video of selectedVideos) {
+            await downlink.addUrls(video.url, {
+              preset_id: presetId,
+              output_dir: destination,
+              parent_id: null,
+              source_kind: "single",
+              title: video.title ?? null,
+              uploader: video.uploader ?? null,
+              thumbnail_url: video.thumbnail_url ?? null,
+              duration_seconds: video.duration_seconds ?? null,
+            });
+          }
+
+          if (settings?.general.auto_start !== false) {
+            await downlink.startAllDownloads();
+          }
+        } else {
+          await downlink.expandPlaylist(url, {
+            preset_id: presetId,
+            output_dir: destination,
+          });
+
+          if (settings?.general.auto_start !== false) {
+            await downlink.startAllDownloads();
+          }
+        }
+      } else {
+        await downlink.addUrls(url, {
+          preset_id: presetId,
+          output_dir: destination,
+          parent_id: null,
+          source_kind: "single",
+          title: metadata.title ?? null,
+          uploader: metadata.uploader ?? null,
+          thumbnail_url: metadata.thumbnail_url ?? null,
+          duration_seconds: metadata.duration_seconds ?? null,
+        });
+
+        if (settings?.general.auto_start !== false) {
+          await downlink.startAllDownloads();
+        }
+      }
+
+      setUrlInput("");
+      setUrlPreviews(new Map());
+    } catch (e) {
+      console.error("Failed to handle playlist:", e);
+    } finally {
+      setIsSubmitting(false);
+      setPlaylistDialogOpen(false);
+      setPlaylistDialogData(null);
+      setPlaylistVideos([]);
+    }
+  }, [playlistDialogData, playlistVideos, downlink, presetId, destination, settings]);
+
+  // Load playlist videos
   const handleLoadPlaylistVideos = useCallback(async () => {
     if (!playlistDialogData) return;
 
     setIsLoadingPlaylistVideos(true);
     try {
-      // Use preview_playlist to get all videos without adding to queue
       const result = await downlink.previewPlaylist(playlistDialogData.url);
 
       if (result.videos && result.videos.length > 0) {
@@ -386,695 +582,347 @@ export default function Home() {
     }
   }, [playlistDialogData, downlink]);
 
-  const handlePlaylistConfirm = useCallback(async (downloadPlaylist: boolean, selectedVideoIds?: string[]) => {
-    if (!playlistDialogData) return;
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-
-    const { url, metadata } = playlistDialogData;
-
+  // Save settings
+  const handleSaveSettings = useCallback(async (newSettings: UserSettings) => {
     try {
-      if (downloadPlaylist) {
-        // Check if user selected specific videos from the playlist
-        if (selectedVideoIds && selectedVideoIds.length > 0 && playlistVideos.length > 0) {
-          // Download only selected videos by their URLs
-          const selectedVideos = playlistVideos.filter((video) =>
-            selectedVideoIds.includes(video.id)
-          );
-
-          // Add each selected video individually
-          for (const video of selectedVideos) {
-            await downlink.addUrls(video.url, {
-              preset_id: presetId,
-              output_dir: destination,
-              parent_id: null,
-              source_kind: "single",
-              title: video.title ?? null,
-              uploader: video.uploader ?? null,
-              thumbnail_url: video.thumbnail_url ?? null,
-              duration_seconds: video.duration_seconds ?? null,
-            });
-          }
-
-          if (settings?.general.auto_start !== false) {
-            await downlink.startAllDownloads();
-          }
-        } else {
-          // Download entire playlist
-          const result = await downlink.addUrls(url, {
-            preset_id: presetId,
-            output_dir: destination,
-            parent_id: null,
-            source_kind: "playlist_parent",
-            title: metadata.playlist_title ?? metadata.title ?? null,
-            uploader: metadata.uploader ?? null,
-            thumbnail_url: metadata.thumbnail_url ?? null,
-            duration_seconds: null,
-          });
-
-          if (result.ids.length > 0) {
-            await downlink.expandPlaylist(url, {
-              preset_id: presetId,
-              output_dir: destination,
-            });
-
-            if (settings?.general.auto_start !== false) {
-              await downlink.startAllDownloads();
-            }
-          }
-        }
-      } else {
-        // Download single video from the playlist
-        const result = await downlink.addUrls(url, {
-          preset_id: presetId,
-          output_dir: destination,
-          parent_id: null,
-          source_kind: "single",
-          title: metadata.title ?? null,
-          uploader: metadata.uploader ?? null,
-          thumbnail_url: metadata.thumbnail_url ?? null,
-          duration_seconds: metadata.duration_seconds ?? null,
-        });
-
-        // Use startAllDownloads to properly respect concurrency limits
-        if (settings?.general.auto_start !== false && result.ids.length > 0) {
-          await downlink.startAllDownloads();
-        }
-      }
-
-      // Clear input and go to queue
-      setUrlInput("");
-      setUrlPreviews(new Map());
-      setTab("queue");
-
-    } catch (e) {
-      console.error("[Downlink] Failed to handle playlist action:", e);
-      setSubmitError(e instanceof Error ? e.message : "Failed to handle playlist action");
-    } finally {
-      setIsSubmitting(false);
-      setPlaylistDialogOpen(false);
-      setPlaylistDialogData(null);
-    }
-  }, [playlistDialogData, downlink, presetId, destination, settings]);
-
-  const handleSaveSettings = useCallback(
-    async (newSettings: UserSettings) => {
       await downlink.saveSettings(newSettings);
       setSettings(newSettings);
-    },
-    [downlink]
-  );
+      setDestination(newSettings.general.download_folder);
+    } catch (e) {
+      console.error("Failed to save settings:", e);
+    }
+  }, [downlink]);
 
-  const handleOpenSettings = useCallback(() => {
-    setSettingsOpen(true);
-  }, []);
-
-  const handleCloseSettings = useCallback(() => {
-    setSettingsOpen(false);
-  }, []);
-
-  const handleOpenAdvanced = useCallback(() => {
-    setAdvancedOpen(true);
-  }, []);
-
-  const handleCloseAdvanced = useCallback(() => {
-    setAdvancedOpen(false);
-  }, []);
-
-  const handleApplyAdvanced = useCallback((options: AdvancedOptionsState) => {
-    setAdvancedOptions(options);
-    // Apply quick toggles from advanced options
-    setSponsorBlockEnabled(options.sponsorBlockEnabled);
-    setSubtitlesEnabled(options.subtitlesEnabled);
-    setSubtitlesLanguage(options.subtitlesLanguage);
-  }, []);
-
-  // Queue items to display
-  const displayQueue = downlink.queue.length > 0 ? downlink.queue : [];
-  const displayHistory = downlink.history;
+  // Active and completed counts
+  const activeCount = downlink.queue.filter(
+    (q) => q.status === "downloading" || q.status === "fetching" || q.status === "queued"
+  ).length;
+  const completedCount = downlink.history.length;
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-4">
-        {/* Top bar */}
-        <header className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-sm font-semibold text-white dark:bg-white dark:text-zinc-900">
-                <Image
-                  src="/downlink.png" alt="Downlink Logo"
-                  width={24}
-                  height={24}
-                />
-              </div>
-              <div className="leading-tight">
-                <div className="text-sm font-semibold">Downlink</div>
-                <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Paste → preview → download
+    <div
+      className={`flex h-screen flex-col bg-zinc-950 text-white ${isDragging ? "ring-2 ring-inset ring-blue-500" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Header bar - like Folx */}
+      <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
+        {/* Add button */}
+        <button
+          onClick={handlePaste}
+          className="btn-brand flex h-9 w-9 items-center justify-center rounded-lg"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+
+        {/* URL Input */}
+        <div className="flex-1 relative">
+          <input
+            ref={inputRef}
+            type="text"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleDownload()}
+            placeholder="Paste video URL here..."
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+          />
+          {previewLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-blue-500" />
+            </div>
+          )}
+        </div>
+
+        {/* Settings button */}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Main content area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left side - Preview or Empty state */}
+        <div className="flex-1 flex flex-col border-r border-zinc-800">
+          {/* Preview area */}
+          <div className="flex-1 flex items-center justify-center p-8">
+            {previewData ? (
+              /* Video preview like PullTube */
+              <div className="text-center max-w-md">
+                {/* Large thumbnail */}
+                <div className="relative mx-auto mb-6 h-48 w-80 overflow-hidden rounded-xl bg-zinc-800 shadow-2xl">
+                  {previewData.thumbnail_url ? (
+                    <Image
+                      src={previewData.thumbnail_url}
+                      alt={previewData.title || "Video"}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <svg className="h-16 w-16 text-zinc-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                  )}
+                  {/* Duration badge */}
+                  {previewData.duration_seconds && (
+                    <div className="absolute bottom-2 right-2 rounded bg-black/80 px-2 py-0.5 text-xs font-medium text-white">
+                      {formatDuration(previewData.duration_seconds)}
+                    </div>
+                  )}
+                  {/* Playlist badge */}
+                  {previewData.is_playlist && (
+                    <div className="absolute top-2 right-2 flex items-center gap-1 rounded bg-blue-600/90 px-2 py-0.5 text-xs font-medium text-white">
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 4a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1zm0 4a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1zm0 4a1 1 0 011-1h7a1 1 0 110 2H3a1 1 0 01-1-1z" />
+                      </svg>
+                      {previewData.playlist_count_hint ?? "?"} videos
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              {downlink.ytDlpVersion && (
-                <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  yt-dlp {downlink.ytDlpVersion}
-                </span>
-              )}
-              <button
-                type="button"
-                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                onClick={handleOpenSettings}
-              >
-                Settings
-              </button>
-            </div>
-          </div>
+                {/* Title */}
+                <h2 className="text-lg font-semibold text-white mb-1 line-clamp-2">
+                  {previewData.title || "Untitled"}
+                </h2>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-            <div className="md:col-span-8">
-              <label
-                htmlFor="downlink-url"
-                className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400"
-              >
-                URL {hasMultipleUrls && `(${extractedUrls.length} URLs detected)`}
-              </label>
-              <div className="flex gap-2 items-start">
-                <textarea
-                  ref={textareaRef}
-                  id="downlink-url"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="Paste a video/playlist link… (or multiple links)"
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-700 resize-none overflow-hidden"
-                  rows={1}
-                  style={{ minHeight: '38px' }}
-                />
+                {/* Uploader and details */}
+                <p className="text-sm text-zinc-400 mb-4">
+                  {previewData.uploader}
+                  {previewData.filesize_bytes && (
+                    <span> · {formatBytes(previewData.filesize_bytes)}</span>
+                  )}
+                </p>
+
+                {/* Clear button */}
                 <button
-                  type="button"
-                  onClick={handlePasteClick}
-                  className="shrink-0 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                >
-                  Paste
-                </button>
-              </div>
-            </div>
-
-            <div className="md:col-span-4">
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Destination
-              </label>
-              <input
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-700"
-              />
-            </div>
-          </div>
-        </header>
-
-        {/* Update available notification */}
-        {downlink.updateAvailable.available && !downlink.updateAvailable.dismissed && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-                <span>
-                  <strong>Update Available:</strong> Downlink v{downlink.updateAvailable.latestVersion} is available.
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
                   onClick={() => {
-                    setSettingsOpen(true);
+                    setUrlInput("");
+                    setUrlPreviews(new Map());
                   }}
-                  className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
                 >
-                  Update
-                </button>
-                <button
-                  type="button"
-                  onClick={downlink.dismissUpdateNotification}
-                  className="rounded-lg px-2 py-1 text-xs hover:bg-blue-100 dark:hover:bg-blue-900/50"
-                >
-                  Dismiss
+                  Clear preview
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Web mode warning */}
-        {!downlink.isTauri && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-            <strong>Web Mode:</strong> Downloads are disabled. Run inside the Downlink
-            desktop app to use full features.
-          </div>
-        )}
-
-        {/* Error messages */}
-        {submitError && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-            {submitError}
-          </div>
-        )}
-
-        {downlink.lastError && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-            {downlink.lastError}
-            <button
-              type="button"
-              onClick={downlink.clearError}
-              className="ml-2 underline"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {/* Main content */}
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-12">
-          {/* Preview + actions */}
-          <div className="md:col-span-7">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              {/* Preview area - Multiple URLs */}
-              {hasMultipleUrls ? (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                  <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 sticky top-0 bg-white dark:bg-zinc-900 pb-2">
-                    {extractedUrls.length} URLs to download
-                  </div>
-                  {extractedUrls.map((url, index) => {
-                    const preview = urlPreviews.get(url);
-                    return (
-                      <div
-                        key={url}
-                        className="flex items-start gap-3 p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800"
-                      >
-                        {/* Thumbnail */}
-                        <div className="shrink-0">
-                          {preview?.data?.thumbnail_url ? (
-                            <img
-                              src={preview.data.thumbnail_url}
-                              alt=""
-                              className="h-12 w-20 rounded-lg object-cover bg-zinc-200 dark:bg-zinc-800"
-                            />
-                          ) : (
-                            <div className="h-12 w-20 rounded-lg bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center">
-                              {preview?.loading ? (
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
-                              ) : (
-                                <svg
-                                  className="w-5 h-5 text-zinc-400"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                                  />
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                  />
-                                </svg>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Info */}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
-                            {preview?.loading
-                              ? "Fetching…"
-                              : preview?.data?.title
-                                ? preview.data.title
-                                : preview?.error
-                                  ? `Error: ${preview.error}`
-                                  : `Video ${index + 1}`}
-                          </div>
-                          <div className="text-xs truncate" style={{ color: 'var(--foreground)', opacity: 0.7 }}>
-                            {preview?.data?.uploader ?? url}
-                            {/* Duration and filesize info */}
-                            {(preview?.data?.duration_seconds || preview?.data?.filesize_bytes) && (
-                              <span className="ml-1">
-                                {preview?.data?.duration_seconds && (
-                                  <span>· {formatDuration(preview.data.duration_seconds)}</span>
-                                )}
-                                {preview?.data?.filesize_bytes && (
-                                  <span> · {formatBytes(preview.data.filesize_bytes)}</span>
-                                )}
-                              </span>
-                            )}
-                          </div>
-                          {preview?.data?.is_playlist && (
-                            <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                              Playlist ({preview.data.playlist_count_hint ?? "?"})
-                            </span>
-                          )}
-                          {/* Per-URL preset selector */}
-                          <select
-                            value={preview?.presetId ?? presetId}
-                            onChange={(e) => handleUrlPresetChange(url, e.target.value)}
-                            className="mt-1.5 text-xs bg-zinc-200 dark:bg-zinc-700 border-0 rounded-md px-1.5 py-0.5 focus:ring-1 focus:ring-blue-500"
-                            style={{ color: 'var(--foreground)' }}
-                          >
-                            {PRESETS.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Remove button and index badge */}
-                        <div className="shrink-0 flex flex-col items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveUrl(url)}
-                            className="flex items-center justify-center h-6 w-6 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                            title="Remove from list"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                          <div className="flex items-center justify-center h-5 w-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-[10px] font-medium" style={{ color: 'var(--foreground)' }}>
-                            {index + 1}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+            ) : previewError ? (
+              /* Error state */
+              <div className="text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10">
+                  <svg className="h-8 w-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                 </div>
-              ) : (
-                /* Single URL preview */
-                <div className="flex items-start gap-4">
-                  {/* Thumbnail */}
-                  <div className="shrink-0">
-                    {previewData?.thumbnail_url ? (
-                      <img
-                        src={previewData.thumbnail_url}
-                        alt=""
-                        className="h-20 w-32 rounded-xl object-cover bg-zinc-200 dark:bg-zinc-800"
-                      />
-                    ) : (
-                      <div className="h-20 w-32 rounded-xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
-                        {previewLoading ? (
-                          <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
-                        ) : (
-                          <svg
-                            className="w-8 h-8 text-zinc-400"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">
-                      {previewLoading
-                        ? "Fetching preview…"
-                        : previewData?.title
-                          ? previewData.title
-                          : urlInput.trim()
-                            ? "Ready to fetch preview"
-                            : "Paste a link to preview"}
-                    </div>
-                    <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {previewError
-                        ? previewError
-                        : previewData?.uploader
-                          ? previewData.uploader
-                          : previewData?.is_playlist
-                            ? `Playlist: ${previewData.playlist_count_hint ?? "?"} items`
-                            : urlInput.trim()
-                              ? "Metadata preview will appear here"
-                              : "Downlink will show title, channel, and formats here"}
-                      {/* Duration and filesize for single URL */}
-                      {previewData && !previewData.is_playlist && (previewData.duration_seconds || previewData.filesize_bytes) && (
-                        <span className="ml-1">
-                          {previewData.duration_seconds && (
-                            <span>· {formatDuration(previewData.duration_seconds)}</span>
-                          )}
-                          {previewData.filesize_bytes && (
-                            <span> · {formatBytes(previewData.filesize_bytes)}</span>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    {previewData?.is_playlist && (
-                      <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M2 4a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1zm0 4a1 1 0 011-1h11a1 1 0 110 2H3a1 1 0 01-1-1zm0 4a1 1 0 011-1h7a1 1 0 110 2H3a1 1 0 01-1-1z" />
-                        </svg>
-                        Playlist ({previewData.playlist_count_hint ?? "?"} items)
-                      </div>
-                    )}
-                  </div>
+                <h3 className="text-lg font-medium text-white mb-2">Failed to fetch preview</h3>
+                <p className="text-sm text-zinc-400 max-w-xs">{previewError}</p>
+              </div>
+            ) : previewLoading ? (
+              /* Loading state */
+              <div className="text-center">
+                <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-zinc-700 border-t-blue-500" />
+                <h3 className="text-lg font-medium text-white mb-2">Fetching preview...</h3>
+                <p className="text-sm text-zinc-400">Getting video information</p>
+              </div>
+            ) : isDragging ? (
+              /* Drag overlay state */
+              <div className="text-center">
+                <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-4 border-dashed border-blue-500 bg-blue-500/10">
+                  <svg className="h-12 w-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
                 </div>
-              )}
-
-              {/* Preset and toggles */}
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
-                {/* Only show global preset selector for single URL mode */}
-                {!hasMultipleUrls && (
-                  <div className="md:col-span-7">
-                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                      Preset
-                    </label>
-                    <select
-                      value={presetId}
-                      onChange={(e) => setPresetId(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-700"
-                    >
-                      {PRESETS.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {selectedPreset.hint}
-                    </div>
-                  </div>
-                )}
-
-                <div className={hasMultipleUrls ? "md:col-span-12" : "md:col-span-5"}>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Quick toggles
-                  </label>
-                  <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={subtitlesEnabled}
-                        onChange={(e) => setSubtitlesEnabled(e.target.checked)}
-                      />
-                      Subtitles
-                    </label>
-
-                    {subtitlesEnabled && (
-                      <input
-                        value={subtitlesLanguage}
-                        onChange={(e) => setSubtitlesLanguage(e.target.value)}
-                        className="w-12 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs dark:border-zinc-800 dark:bg-zinc-900"
-                        placeholder="en"
-                      />
-                    )}
-
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={sponsorBlockEnabled}
-                        onChange={(e) => setSponsorBlockEnabled(e.target.checked)}
-                      />
-                      SponsorBlock
-                    </label>
-                  </div>
+                <h1 className="text-2xl font-bold text-blue-400 mb-2">
+                  Drop URL Here
+                </h1>
+                <p className="text-zinc-400">
+                  Release to add video to download
+                </p>
+              </div>
+            ) : (
+              /* Empty state - like PullTube */
+              <div className="text-center">
+                <h1 className="text-3xl font-bold text-white mb-3">
+                  Paste or Drop Video URLs Here
+                </h1>
+                <p className="text-zinc-400 mb-8 max-w-md">
+                  Supports YouTube, Vimeo, Facebook, Instagram, Twitter,
+                  TikTok, Soundcloud, and 1000+ more sites
+                </p>
+                <div className="flex items-center justify-center gap-2 text-zinc-500">
+                  <kbd className="rounded bg-zinc-800 px-2 py-1 text-xs">⌘V</kbd>
+                  <span className="text-sm">to paste from clipboard</span>
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Action buttons */}
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          {/* Bottom action bar - like PullTube */}
+          {(previewData || urlInput.trim()) && (
+            <div className="border-t border-zinc-800 p-4">
+              <div className="flex items-center gap-3">
+                {/* Quick toggles */}
                 <button
-                  type="button"
-                  disabled={isSubmitting || previewLoading || !downlink.isTauri || extractedUrls.length === 0}
-                  onClick={handleAddToQueue}
-                  className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  onClick={() => setSubtitlesEnabled(!subtitlesEnabled)}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${subtitlesEnabled
+                    ? "bg-blue-600 text-white"
+                    : "bg-zinc-800 text-zinc-400 hover:text-white"
+                    }`}
                 >
-                  {isSubmitting
-                    ? "Adding…"
-                    : previewLoading
-                      ? "Loading…"
-                      : previewData?.is_playlist
-                        ? `Download Playlist (${previewData.playlist_count_hint ?? "?"} items)`
-                        : hasMultipleUrls
-                          ? `Download ${extractedUrls.length} Items`
-                          : "Download"}
+                  CC
+                </button>
+                <button
+                  onClick={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${sponsorBlockEnabled
+                    ? "bg-blue-600 text-white"
+                    : "bg-zinc-800 text-zinc-400 hover:text-white"
+                    }`}
+                >
+                  SB
                 </button>
 
+                {/* Preset selector */}
+                <select
+                  value={presetId}
+                  onChange={(e) => setPresetId(e.target.value)}
+                  className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                >
+                  {PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Spacer */}
                 <div className="flex-1" />
 
+                {/* Download button */}
                 <button
-                  type="button"
-                  onClick={handleOpenAdvanced}
-                  className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                  title="Advanced options"
+                  onClick={handleDownload}
+                  disabled={isSubmitting || !urlInput.trim()}
+                  className="btn-brand flex-1 max-w-xs rounded-xl py-3 px-6 text-sm"
                 >
-                  Advanced…
+                  {isSubmitting ? "Adding..." : previewData?.is_playlist ? "Download Playlist" : "Download video"}
                 </button>
               </div>
             </div>
+          )}
+        </div>
+
+        {/* Right side - Download list like Folx */}
+        <div className="w-80 flex flex-col bg-zinc-900/50">
+          {/* Tabs */}
+          <div className="flex border-b border-zinc-800">
+            <button
+              onClick={() => setShowHistory(false)}
+              className={`flex-1 py-3 text-center text-sm font-medium transition-colors ${!showHistory
+                ? "text-white border-b-2 border-blue-500"
+                : "text-zinc-400 hover:text-white"
+                }`}
+            >
+              Downloads ({activeCount})
+            </button>
+            <button
+              onClick={() => setShowHistory(true)}
+              className={`flex-1 py-3 text-center text-sm font-medium transition-colors ${showHistory
+                ? "text-white border-b-2 border-blue-500"
+                : "text-zinc-400 hover:text-white"
+                }`}
+            >
+              History ({completedCount})
+            </button>
           </div>
 
-          {/* Queue / History */}
-          <div className="md:col-span-5">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-800 dark:bg-zinc-950">
-                  <button
-                    type="button"
-                    onClick={() => setTab("queue")}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${tab === "queue"
-                      ? "bg-white shadow-sm dark:bg-zinc-900"
-                      : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-                      }`}
-                  >
-                    Queue ({displayQueue.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTab("history")}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${tab === "history"
-                      ? "bg-white shadow-sm dark:bg-zinc-900"
-                      : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-                      }`}
-                  >
-                    History ({displayHistory.length})
-                  </button>
+          {/* Download list */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {!showHistory ? (
+              /* Downloads tab */
+              downlink.queue.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                  <svg className="h-12 w-12 text-zinc-700 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
+                  <p className="text-sm text-zinc-500">No active downloads</p>
+                  <p className="text-xs text-zinc-600 mt-1">Paste a URL to get started</p>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  {tab === "queue" && displayQueue.length > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                        onClick={() => downlink.startAllDownloads()}
-                      >
-                        Start all
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                        onClick={() => downlink.clearQueue()}
-                      >
-                        Clear
-                      </button>
-                    </>
-                  )}
-                  {tab === "history" && displayHistory.length > 0 && (
-                    <button
-                      type="button"
-                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-                      onClick={() => downlink.clearHistory()}
-                    >
-                      Clear
-                    </button>
-                  )}
+              ) : (
+                downlink.queue.map((item) => (
+                  <DownloadItem
+                    key={item.id}
+                    item={item}
+                    onStop={downlink.stopDownload}
+                    onCancel={downlink.cancelDownload}
+                    onRetry={downlink.retryDownload}
+                    onOpen={downlink.openFile}
+                    onOpenFolder={downlink.openFolder}
+                  />
+                ))
+              )
+            ) : (
+              /* History tab */
+              downlink.history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                  <svg className="h-12 w-12 text-zinc-700 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-zinc-500">No history yet</p>
+                  <p className="text-xs text-zinc-600 mt-1">Completed downloads appear here</p>
                 </div>
-              </div>
+              ) : (
+                downlink.history.map((item) => (
+                  <DownloadItem
+                    key={item.id}
+                    item={item}
+                    onStop={downlink.stopDownload}
+                    onCancel={downlink.cancelDownload}
+                    onRetry={downlink.retryDownload}
+                    onOpen={downlink.openFile}
+                    onOpenFolder={downlink.openFolder}
+                  />
+                ))
+              )
+            )}
+          </div>
 
-              <div className="mt-3 max-h-[500px] overflow-y-auto">
-                {tab === "queue" ? (
-                  <ul className="flex flex-col gap-2">
-                    {displayQueue.length === 0 ? (
-                      <li className="rounded-xl border border-dashed border-zinc-200 p-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                        <div className="mb-2">Queue is empty</div>
-                        <div className="text-xs">
-                          Paste a link above to get started
-                        </div>
-                      </li>
-                    ) : (
-                      displayQueue.map((item) => (
-                        <QueueItemComponent
-                          key={item.id}
-                          item={item}
-                          onStart={downlink.startDownload}
-                          onStop={downlink.stopDownload}
-                          onCancel={downlink.cancelDownload}
-                          onRetry={downlink.retryDownload}
-                          onRemove={downlink.removeDownload}
-                          onOpenFile={downlink.openFile}
-                          onOpenFolder={downlink.openFolder}
-                        />
-                      ))
-                    )}
-                  </ul>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {displayHistory.length === 0 ? (
-                      <li className="rounded-xl border border-dashed border-zinc-200 p-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                        <div className="mb-2">No history yet</div>
-                        <div className="text-xs">
-                          Completed downloads will appear here
-                        </div>
-                      </li>
-                    ) : (
-                      displayHistory.map((item) => (
-                        <QueueItemComponent
-                          key={item.id}
-                          item={item}
-                          onOpenFile={downlink.openFile}
-                          onOpenFolder={downlink.openFolder}
-                        />
-                      ))
-                    )}
-                  </ul>
-                )}
-              </div>
+          {/* Bottom actions */}
+          {((!showHistory && downlink.queue.length > 0) || (showHistory && downlink.history.length > 0)) && (
+            <div className="border-t border-zinc-800 p-3">
+              <button
+                onClick={() => {
+                  if (showHistory) {
+                    downlink.clearHistory();
+                  } else {
+                    downlink.clearQueue();
+                  }
+                }}
+                className="w-full rounded-lg bg-zinc-800 py-2 text-sm text-zinc-400 hover:bg-zinc-700 hover:text-white transition-colors"
+              >
+                {showHistory ? "Clear History" : "Clear Queue"}
+              </button>
             </div>
-          </div>
-        </section>
+          )}
+        </div>
+      </div>
 
-        {/* Footer */}
-        <footer className="pb-2 text-center text-xs text-zinc-500 dark:text-zinc-400">
-          Downlink v{downlink.appVersion ?? "0.1.1"} · Powered by yt-dlp
-          {downlink.ytDlpVersion && ` ${downlink.ytDlpVersion}`}
-        </footer>
+      {/* Footer */}
+      <div className="border-t border-zinc-800 px-4 py-2 text-center text-xs text-zinc-500">
+        Downlink v{downlink.appVersion ?? "0.1.9"} · Powered by yt-dlp
       </div>
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
-        onClose={handleCloseSettings}
+        onClose={() => setSettingsOpen(false)}
         settings={settings}
         onSave={handleSaveSettings}
         currentVersion={downlink.appVersion}
@@ -1083,7 +931,7 @@ export default function Home() {
         restartApp={downlink.restartApp}
       />
 
-      {/* Playlist Confirmation Dialog */}
+      {/* Playlist Dialog */}
       {playlistDialogData && (
         <PlaylistDialog
           isOpen={playlistDialogOpen}
@@ -1092,8 +940,8 @@ export default function Home() {
             setPlaylistVideos([]);
           }}
           onConfirm={handlePlaylistConfirm}
-          playlistTitle={playlistDialogData.metadata.playlist_title ?? "this playlist"}
-          videoTitle={playlistDialogData.metadata.title ?? "this video"}
+          playlistTitle={playlistDialogData.metadata.playlist_title ?? "Playlist"}
+          videoTitle={playlistDialogData.metadata.title ?? "Video"}
           videoThumbnail={playlistDialogData.metadata.thumbnail_url ?? undefined}
           playlistCount={playlistDialogData.metadata.playlist_count_hint ?? 0}
           playlistVideos={playlistVideos}
@@ -1101,15 +949,6 @@ export default function Home() {
           onLoadPlaylistVideos={handleLoadPlaylistVideos}
         />
       )}
-
-      {/* Advanced Options Modal */}
-      <AdvancedOptions
-        isOpen={advancedOpen}
-        onClose={handleCloseAdvanced}
-        options={advancedOptions}
-        onOptionsChange={setAdvancedOptions}
-        onApply={handleApplyAdvanced}
-      />
     </div>
   );
 }

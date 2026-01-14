@@ -362,15 +362,15 @@ export function PlaylistDialog({
                       type="button"
                       onClick={() => handleToggleVideo(video.id)}
                       className={`w-full flex items-center gap-3 rounded-lg p-2 text-left transition-all ${selectedVideos.has(video.id)
-                          ? "bg-blue-500/20 border border-blue-500/50"
-                          : "bg-zinc-800/50 border border-transparent hover:bg-zinc-800"
+                        ? "bg-blue-500/20 border border-blue-500/50"
+                        : "bg-zinc-800/50 border border-transparent hover:bg-zinc-800"
                         }`}
                     >
                       {/* Checkbox */}
                       <div
                         className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border transition-colors ${selectedVideos.has(video.id)
-                            ? "border-blue-500 bg-blue-500"
-                            : "border-zinc-600 bg-transparent"
+                          ? "border-blue-500 bg-blue-500"
+                          : "border-zinc-600 bg-transparent"
                           }`}
                       >
                         {selectedVideos.has(video.id) && (
@@ -433,7 +433,7 @@ export function PlaylistDialog({
                 type="button"
                 onClick={handleDownloadSelected}
                 disabled={selectedVideos.size === 0}
-                className="w-full rounded-xl bg-blue-600 py-3 px-4 font-semibold text-white transition-all hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="btn-brand w-full rounded-xl py-3 px-4 flex items-center justify-center gap-2"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

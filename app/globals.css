@@ -3,6 +3,20 @@
 :root {
     --background: #ffffff;
     --foreground: #171717;
+
+    /* Downlink brand colors - from logo (blue to cyan) */
+    --brand-blue: #2563eb;
+    --brand-blue-light: #3b82f6;
+    --brand-cyan: #06b6d4;
+    --brand-teal: #0891b2;
+
+    /* Brand gradient - matches logo arrow (blue → cyan) */
+    --brand-gradient: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-teal) 100%);
+    --brand-gradient-hover: linear-gradient(135deg, var(--brand-blue-light) 0%, var(--brand-cyan) 100%);
+
+    /* Button specific */
+    --button-primary-bg: var(--brand-blue);
+    --button-primary-hover: var(--brand-blue-light);
 }
 
 @theme inline {
@@ -10,6 +24,12 @@
     --color-foreground: var(--foreground);
     --font-sans: var(--font-geist-sans);
     --font-mono: var(--font-geist-mono);
+
+    /* Brand colors for Tailwind */
+    --color-brand-blue: var(--brand-blue);
+    --color-brand-blue-light: var(--brand-blue-light);
+    --color-brand-cyan: var(--brand-cyan);
+    --color-brand-teal: var(--brand-teal);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,5 +63,30 @@ button:disabled,
 [type="button"]:disabled,
 [type="submit"]:disabled,
 select:disabled {
+    cursor: not-allowed;
+}
+
+/* Brand gradient button utility class */
+.btn-brand {
+    background: var(--brand-gradient);
+    color: white;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.btn-brand:hover:not(:disabled) {
+    background: var(--brand-gradient-hover);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-brand:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.btn-brand:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
 }
