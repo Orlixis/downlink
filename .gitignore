@@ -46,12 +46,14 @@ next-env.d.ts
 # Sidecar binaries (downloaded during build)
 /src-tauri/binaries/yt-dlp-*
 /src-tauri/binaries/ffmpeg-*
-*docs.md
-*_SUMMARY.md
-*IMPROVEMENTS.md
-*STEPS.md
-*START.md
-*ING.md
-*TURE.md
-*ARY.txt
-*LIST.md
+# *docs.md
+# *_SUMMARY.md
+# *IMPROVEMENTS.md
+# *STEPS.md
+# *START.md
+# *ING.md
+# *TURE.md
+# *ARY.txt
+# *LIST.md
+temp_auto_push.bat
+temp_interactive_push.bat
