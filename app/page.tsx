@@ -11,7 +11,9 @@ import { ActionBar } from "./components/ActionBar";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { Footer } from "./components/Footer";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
-import type { UserSettings, FetchMetadataResult } from "./types";
+import type { UserSettings, FetchMetadataResult, UrlPreviewItem, VideoQualityOption } from "./types";
+import { normalizeBareUrls, expandUrlPattern } from "./types";
+import { tryOEmbedPreview, hasOEmbedProvider } from "./lib/oembed";
 
 // Preview data for URLs
 interface UrlPreview {
@@ -61,45 +63,77 @@ export default function Home() {
 
   // Preview state
   const [urlPreviews, setUrlPreviews] = useState<Map<string, UrlPreview>>(new Map());
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Tracks which URLs have already been fetched/initiated (avoids re-fetch on re-render)
+  const fetchedUrlsRef = useRef<Set<string>>(new Set());
+  // Tracks URLs whose quality options are being fetched in background (after oEmbed fast-path)
+  const qualitiesFetchingRef = useRef<Set<string>>(new Set());
+  // Per-URL selected quality: url → format_string (or "default" to use global preset)
+  const [selectedQualityPerUrl, setSelectedQualityPerUrl] = useState<Map<string, string>>(new Map());
 
-  // Extract URLs from input
-  const extractedUrls = useMemo(() => {
-    if (!urlInput.trim()) return [];
-    const matches = urlInput.match(/https?:\/\/[^\s]+/g) ?? [];
+  // Extract + expand URLs from input.
+  // Range patterns like [23-27] are expanded to individual URLs.
+  // rangeGroups tracks which original patterns produced multiple URLs (for the panel batch card).
+  const { extractedUrls, rangeGroups } = useMemo(() => {
+    if (!urlInput.trim()) {
+      return { extractedUrls: [] as string[], rangeGroups: [] as { pattern: string; urls: string[] }[] };
+    }
+
+    const normalized = normalizeBareUrls(urlInput);
+    const tokens = normalized.match(/https?:\/\/[^\s]+/g) ?? [];
     const seen = new Set<string>();
-    const out: string[] = [];
-    for (const m of matches) {
-      const u = m.trim();
-      if (!seen.has(u)) {
-        seen.add(u);
-        out.push(u);
+    const urls: string[] = [];
+    const ranges: { pattern: string; urls: string[] }[] = [];
+
+    for (const token of tokens) {
+      const trimmed = token.trim();
+      const expanded = expandUrlPattern(trimmed);
+
+      if (expanded.length > 1) {
+        // Range pattern — track as a group, add expanded URLs to the flat list
+        const unique = expanded.filter((u) => !seen.has(u));
+        unique.forEach((u) => { seen.add(u); urls.push(u); });
+        if (unique.length > 0) ranges.push({ pattern: trimmed, urls: unique });
+      } else {
+        if (!seen.has(trimmed)) { seen.add(trimmed); urls.push(trimmed); }
       }
     }
-    return out;
+
+    return { extractedUrls: urls, rangeGroups: ranges };
   }, [urlInput]);
 
-  // Single preview data
-  const previewData = useMemo(() => {
-    if (extractedUrls.length === 1) {
-      return urlPreviews.get(extractedUrls[0])?.data ?? null;
-    }
-    return null;
-  }, [extractedUrls, urlPreviews]);
+  // Flat set of all range-expanded URLs — these are NOT previewed individually
+  const rangeExpandedSet = useMemo(
+    () => new Set(rangeGroups.flatMap((g) => g.urls)),
+    [rangeGroups]
+  );
 
-  const previewLoading = useMemo(() => {
-    if (extractedUrls.length === 1) {
-      return urlPreviews.get(extractedUrls[0])?.loading ?? false;
-    }
-    return false;
-  }, [extractedUrls, urlPreviews]);
+  // Per-URL preview items for the panel — only for non-range URLs
+  const allPreviews = useMemo((): UrlPreviewItem[] => {
+    return extractedUrls
+      .filter((url) => !rangeExpandedSet.has(url))
+      .map((url) => {
+        const p = urlPreviews.get(url);
+        return p
+          ? {
+            url: p.url,
+            loading: p.loading,
+            data: p.data,
+            error: p.error,
+            qualitiesLoading: qualitiesFetchingRef.current.has(url),
+          }
+          : { url, loading: false, data: null, error: null, qualitiesLoading: false };
+      });
+  }, [extractedUrls, urlPreviews, rangeExpandedSet]);
 
-  const previewError = useMemo(() => {
-    if (extractedUrls.length === 1) {
-      return urlPreviews.get(extractedUrls[0])?.error ?? null;
-    }
-    return null;
-  }, [extractedUrls, urlPreviews]);
+  // Convenience values for single-URL consumers (playlist dialog, download handler)
+  // Only valid when there's exactly 1 URL and no range groups
+  const previewData =
+    allPreviews.length === 1 && rangeGroups.length === 0 ? allPreviews[0].data : null;
+  const previewError =
+    allPreviews.length === 1 && rangeGroups.length === 0 ? allPreviews[0].error : null;
+  // Spinner shows while ANY non-range URL is still loading
+  const previewLoading = allPreviews.some((p) => p.loading);
 
   // Handle splash screen completion
   const handleSplashComplete = useCallback(() => {
@@ -174,67 +208,169 @@ export default function Home() {
     }
   }, []);
 
-  // Auto-fetch preview when URL changes
-  useEffect(() => {
-    if (!downlink.isTauri || extractedUrls.length !== 1) return;
+  // Stable ref to fetchMetadata so the effect dependency doesn't change every render
+  const fetchMetadataRef = useRef(downlink.fetchMetadata);
+  useEffect(() => { fetchMetadataRef.current = downlink.fetchMetadata; });
 
-    const url = extractedUrls[0];
-    const existing = urlPreviews.get(url);
-    if (existing) return;
+  // Auto-fetch preview for ALL extracted URLs in parallel.
+  // Rules:
+  //  - Debounce 500 ms so we don't fire while the user is still typing
+  //  - Cap at 8 concurrent previews to avoid hammering the backend
+  //  - fetchedUrlsRef prevents re-fetching URLs already initiated
+  //  - `cancelled` flag drops results that arrive after the input changed
+  useEffect(() => {
+    if (!downlink.isTauri || extractedUrls.length === 0) return;
+
+    // Only fetch non-range URLs not yet initiated; cap at 6 to avoid backend overload
+    const pending = extractedUrls
+      .filter((url) => !rangeExpandedSet.has(url) && !fetchedUrlsRef.current.has(url))
+      .slice(0, 6);
+
+    if (pending.length === 0) return;
 
     let cancelled = false;
 
-    const fetchPreview = async () => {
+    const fetchAll = async () => {
+      // Mark all pending as loading in one batch
+      fetchedUrlsRef.current = new Set([...fetchedUrlsRef.current, ...pending]);
       setUrlPreviews((prev) => {
         const updated = new Map(prev);
-        updated.set(url, { url, loading: true, data: null, error: null, presetId });
+        for (const url of pending) {
+          updated.set(url, { url, loading: true, data: null, error: null, presetId });
+        }
         return updated;
       });
 
-      try {
-        // Create a timeout promise that rejects after 30 seconds
-        const fetchPromise = downlink.fetchMetadata(url, {
-          preset_id: presetId,
-          output_dir: destination,
-        });
+      // ─── Per-URL fetch logic ──────────────────────────────────────────────
+      // Handles oEmbed fast-path + yt-dlp fallback + background quality fetch.
+      const fetchOneUrl = async (url: string): Promise<void> => {
+        if (cancelled) return;
+        try {
+          // 1️⃣ oEmbed fast-path (YouTube, Vimeo, TikTok, etc.) — instant, no subprocess
+          const oembedResult = await tryOEmbedPreview(url);
 
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Preview fetch timed out after 30 seconds. Please try again.")), 30000)
-        );
+          if (oembedResult) {
+            if (!cancelled) {
+              setUrlPreviews((prev) => {
+                const updated = new Map(prev);
+                updated.set(url, { url, loading: false, data: oembedResult, error: null, presetId });
+                return updated;
+              });
+              qualitiesFetchingRef.current.add(url);
+            }
 
-        const result = await Promise.race([fetchPromise, timeoutPromise]);
+            // Background yt-dlp call for quality options — does NOT block the preview
+            fetchMetadataRef.current(url, { preset_id: presetId, output_dir: destination })
+              .then((ytResult) => {
+                if (!cancelled) {
+                  qualitiesFetchingRef.current.delete(url);
+                  setUrlPreviews((prev) => {
+                    const updated = new Map(prev);
+                    const existing = prev.get(url);
+                    if (existing?.data) {
+                      updated.set(url, {
+                        ...existing,
+                        data: {
+                          ...existing.data,
+                          duration_seconds: ytResult.duration_seconds ?? existing.data.duration_seconds,
+                          available_qualities: ytResult.available_qualities ?? [],
+                        },
+                      });
+                    }
+                    return updated;
+                  });
+                }
+              })
+              .catch(() => {
+                if (!cancelled) {
+                  qualitiesFetchingRef.current.delete(url);
+                  setUrlPreviews((prev) => new Map(prev));
+                }
+              });
+            return;
+          }
 
-        if (!cancelled) {
-          setUrlPreviews((prev) => {
-            const updated = new Map(prev);
-            updated.set(url, { url, loading: false, data: result, error: null, presetId });
-            return updated;
-          });
-        }
-      } catch (e) {
-        if (!cancelled) {
-          const errorMessage = e instanceof Error ? e.message : "Failed to fetch preview";
-          setUrlPreviews((prev) => {
-            const updated = new Map(prev);
-            updated.set(url, {
-              url,
-              loading: false,
-              data: null,
-              error: errorMessage,
-              presetId,
+          // 2️⃣ Unknown site — yt-dlp via backend (slower, subprocess-based).
+          // 20 s budget: streaming sites typically make 3-5 HTTP round-trips
+          // (page load → CDN lookup → embed API → manifest), each taking 2-5 s.
+          const result = await Promise.race([
+            fetchMetadataRef.current(url, { preset_id: presetId, output_dir: destination }),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Preview timed out — the site may be slow or unsupported.")),
+                20_000
+              )
+            ),
+          ]);
+
+          if (!cancelled) {
+            setUrlPreviews((prev) => {
+              const updated = new Map(prev);
+              updated.set(url, { url, loading: false, data: result, error: null, presetId });
+              return updated;
             });
-            return updated;
-          });
+          }
+        } catch (e) {
+          if (!cancelled) {
+            fetchedUrlsRef.current.delete(url); // allow retry on next input change
+            setUrlPreviews((prev) => {
+              const updated = new Map(prev);
+              updated.set(url, {
+                url,
+                loading: false,
+                data: null,
+                error: e instanceof Error ? e.message : "Failed to fetch preview",
+                presetId,
+              });
+              return updated;
+            });
+          }
         }
+      };
+
+      // ─── Smart concurrency: domain-grouped sequential fetching ─────────────
+      //
+      // WHY: Firing multiple yt-dlp processes at the same site simultaneously
+      // triggers rate-limiting / bot-detection, causing most requests to fail.
+      //
+      // STRATEGY:
+      //   • Group URLs by their hostname.
+      //   • Within the same domain → fetch sequentially with a gap:
+      //       - oEmbed-capable domains: 150 ms gap (instant calls, minimal risk)
+      //       - yt-dlp domains        : 700 ms gap (slow subprocess, prevent bans)
+      //   • Across different domains  → run domain groups in parallel.
+      const domainMap = new Map<string, string[]>();
+      for (const url of pending) {
+        let domain: string;
+        try { domain = new URL(url).hostname; } catch { domain = "unknown"; }
+        if (!domainMap.has(domain)) domainMap.set(domain, []);
+        domainMap.get(domain)!.push(url);
       }
+
+      await Promise.allSettled(
+        [...domainMap.values()].map(async (domainUrls) => {
+          for (let i = 0; i < domainUrls.length; i++) {
+            if (cancelled) break;
+            await fetchOneUrl(domainUrls[i]);
+            // Throttle between same-domain requests
+            if (i < domainUrls.length - 1 && !cancelled) {
+              const gap = hasOEmbedProvider(domainUrls[i]) ? 150 : 700;
+              await new Promise<void>((resolve) => setTimeout(resolve, gap));
+            }
+          }
+        })
+      );
     };
 
-    const timeout = setTimeout(fetchPreview, 500);
+    const timeout = setTimeout(fetchAll, 500);
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [downlink.isTauri, extractedUrls, presetId, destination, urlPreviews, downlink]);
+    // rangeExpandedSet is intentionally omitted from deps — it's derived from extractedUrls
+    // and changing it shouldn't re-trigger fetches for already-initiated URLs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [downlink.isTauri, extractedUrls, presetId, destination]);
 
   // Handle paste button
   const handlePaste = useCallback(async () => {
@@ -249,43 +385,100 @@ export default function Home() {
 
   // Handle download
   const handleDownload = useCallback(async () => {
-    if (!urlInput.trim() || isSubmitting) return;
+    if (extractedUrls.length === 0 || isSubmitting) return;
 
-    // Check if it's a playlist
-    if (previewData?.is_playlist && extractedUrls.length === 1) {
+    // Single non-range URL that is a playlist → open the playlist dialog
+    if (previewData?.is_playlist && allPreviews.length === 1 && rangeGroups.length === 0) {
       setPlaylistDialogData({
-        url: extractedUrls[0],
+        url: allPreviews[0].url,
         metadata: previewData,
       });
       setPlaylistDialogOpen(true);
       return;
     }
 
+    const hasSingleMeta = allPreviews.length === 1 && rangeGroups.length === 0;
+
     setIsSubmitting(true);
     try {
-      const result = await downlink.addUrls(urlInput, {
-        preset_id: presetId,
-        output_dir: destination,
-        parent_id: null,
-        source_kind: "single",
-        title: previewData?.title ?? null,
-        uploader: previewData?.uploader ?? null,
-        thumbnail_url: previewData?.thumbnail_url ?? null,
-        duration_seconds: previewData?.duration_seconds ?? null,
-      });
+      if (hasSingleMeta) {
+        // Single URL — pass metadata to skip re-fetch, use per-URL quality selection
+        const quality = selectedQualityPerUrl.get(allPreviews[0].url);
+        const effectivePresetId =
+          quality && quality !== "default" ? `custom:${quality}` : presetId;
 
-      if (settings?.general.auto_start !== false && result.ids.length > 0) {
-        await downlink.startAllDownloads();
+        const result = await downlink.addUrls(allPreviews[0].url, {
+          preset_id: effectivePresetId,
+          output_dir: destination,
+          parent_id: null,
+          source_kind: "single",
+          title: previewData?.title ?? null,
+          uploader: previewData?.uploader ?? null,
+          thumbnail_url: previewData?.thumbnail_url ?? null,
+          duration_seconds: previewData?.duration_seconds ?? null,
+        });
+
+        if (settings?.general.auto_start !== false && result.ids.length > 0) {
+          await downlink.startAllDownloads();
+        }
+      } else {
+        // Multi-URL — group by selected quality to minimise addUrls calls
+        // Range-expanded URLs always use the global preset (no per-URL selection for them)
+        const nonRangeUrlSet = new Set(allPreviews.map((p) => p.url));
+        const qualityGroups = new Map<string, string[]>(); // presetId → urls[]
+
+        for (const url of extractedUrls) {
+          const isNonRange = nonRangeUrlSet.has(url);
+          const quality = isNonRange ? selectedQualityPerUrl.get(url) : undefined;
+          const groupPreset =
+            quality && quality !== "default" ? `custom:${quality}` : presetId;
+
+          if (!qualityGroups.has(groupPreset)) qualityGroups.set(groupPreset, []);
+          qualityGroups.get(groupPreset)!.push(url);
+        }
+
+        let hasAnyIds = false;
+        for (const [groupPreset, groupUrls] of qualityGroups) {
+          const result = await downlink.addUrls(groupUrls.join("\n"), {
+            preset_id: groupPreset,
+            output_dir: destination,
+            parent_id: null,
+            source_kind: "single",
+            title: null,
+            uploader: null,
+            thumbnail_url: null,
+            duration_seconds: null,
+          });
+          if (result.ids.length > 0) hasAnyIds = true;
+        }
+
+        if (settings?.general.auto_start !== false && hasAnyIds) {
+          await downlink.startAllDownloads();
+        }
       }
 
       setUrlInput("");
       setUrlPreviews(new Map());
+      fetchedUrlsRef.current.clear();
+      qualitiesFetchingRef.current.clear();
+      setSelectedQualityPerUrl(new Map());
     } catch (e) {
       console.error("Failed to add download:", e);
     } finally {
       setIsSubmitting(false);
     }
-  }, [urlInput, isSubmitting, previewData, extractedUrls, downlink, presetId, destination, settings]);
+  }, [
+    extractedUrls,
+    isSubmitting,
+    previewData,
+    allPreviews,
+    rangeGroups,
+    downlink,
+    presetId,
+    destination,
+    settings,
+    selectedQualityPerUrl,
+  ]);
 
   // Handle playlist confirm
   const handlePlaylistConfirm = useCallback(async (downloadPlaylist: boolean, selectedVideoIds?: string[]) => {
@@ -393,10 +586,28 @@ export default function Home() {
     }
   }, [downlink]);
 
+  // Apply a quality to all non-range URLs at once
+  const handleSelectQualityForAll = useCallback((formatString: string) => {
+    setSelectedQualityPerUrl((prev) => {
+      const updated = new Map(prev);
+      for (const preview of allPreviews) {
+        if (formatString === "default") {
+          updated.delete(preview.url);
+        } else {
+          updated.set(preview.url, formatString);
+        }
+      }
+      return updated;
+    });
+  }, [allPreviews]);
+
   // Clear preview
   const handleClearPreview = useCallback(() => {
     setUrlInput("");
     setUrlPreviews(new Map());
+    fetchedUrlsRef.current.clear();
+    qualitiesFetchingRef.current.clear();
+    setSelectedQualityPerUrl(new Map());
   }, []);
 
   // Show splash screen while app is loading
@@ -414,46 +625,70 @@ export default function Home() {
       {/* Header bar */}
       <HeaderBar
         urlInput={urlInput}
-        onUrlChange={setUrlInput}
+        onUrlChange={(val) => {
+          setUrlInput(val);
+          if (!val.trim()) {
+            setUrlPreviews(new Map());
+            fetchedUrlsRef.current.clear();
+            qualitiesFetchingRef.current.clear();
+            setSelectedQualityPerUrl(new Map());
+          }
+        }}
         onPaste={handlePaste}
         onSubmit={handleDownload}
         onSettingsClick={() => setSettingsOpen(true)}
         isLoading={previewLoading}
         inputRef={inputRef}
+        urlCount={extractedUrls.length}
       />
 
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left side - Preview or Empty state */}
         <div className="flex-1 flex flex-col border-r border-zinc-800">
-          {/* Preview area */}
-          <div className="flex-1 flex items-center justify-center p-8">
-            <PreviewPanel
-              previewData={previewData}
-              previewLoading={previewLoading}
-              previewError={previewError}
-              isDragging={isDragging}
-              onClearPreview={handleClearPreview}
-            />
+          {/* Preview area — scrollable so multi-URL list can grow */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-6">
+              <PreviewPanel
+                previewData={previewData}
+                previewLoading={previewLoading}
+                previewError={previewError}
+                isDragging={isDragging}
+                onClearPreview={handleClearPreview}
+                allPreviews={allPreviews}
+                rangeGroups={rangeGroups}
+                selectedQualitiesMap={selectedQualityPerUrl}
+                onSelectQuality={(url, formatString) => {
+                  setSelectedQualityPerUrl((prev) => {
+                    const updated = new Map(prev);
+                    if (formatString === "default") {
+                      updated.delete(url);
+                    } else {
+                      updated.set(url, formatString);
+                    }
+                    return updated;
+                  });
+                }}
+                onSelectQualityForAll={handleSelectQualityForAll}
+              />
+            </div>
           </div>
 
-          {/* Bottom action bar */}
-          {(previewData || urlInput.trim()) && (
-            <ActionBar
-              presetId={presetId}
-              onPresetChange={setPresetId}
-              presets={PRESETS}
-              subtitlesEnabled={subtitlesEnabled}
-              onSubtitlesToggle={() => setSubtitlesEnabled(!subtitlesEnabled)}
-              sponsorBlockEnabled={sponsorBlockEnabled}
-              onSponsorBlockToggle={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
-              onDownload={handleDownload}
-              isSubmitting={isSubmitting}
-              isPlaylist={previewData?.is_playlist ?? false}
-              disabled={!urlInput.trim()}
-              previewLoading={previewLoading}
-            />
-          )}
+          {/* Action bar — always visible so presets are always accessible */}
+          <ActionBar
+            presetId={presetId}
+            onPresetChange={setPresetId}
+            presets={PRESETS}
+            subtitlesEnabled={subtitlesEnabled}
+            onSubtitlesToggle={() => setSubtitlesEnabled(!subtitlesEnabled)}
+            sponsorBlockEnabled={sponsorBlockEnabled}
+            onSponsorBlockToggle={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
+            onDownload={handleDownload}
+            isSubmitting={isSubmitting}
+            isPlaylist={previewData?.is_playlist ?? false}
+            disabled={!urlInput.trim()}
+            previewLoading={previewLoading}
+          />
         </div>
 
         {/* Right side - Download queue */}
@@ -473,7 +708,11 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <Footer appVersion={downlink.appVersion ?? undefined} />
+      <Footer
+        appVersion={downlink.appVersion ?? undefined}
+        ytDlpVersion={downlink.ytDlpVersion}
+        ffmpegVersion={downlink.ffmpegVersion}
+      />
 
       {/* Settings Modal */}
       <SettingsModal

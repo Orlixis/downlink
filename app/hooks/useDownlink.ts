@@ -423,14 +423,12 @@ export function useDownlink(): UseDownlinkReturn {
       url: string,
       options: FetchMetadataOptions
     ): Promise<FetchMetadataResult> => {
-      const result = await invoke<FetchMetadataResult>("fetch_metadata", {
-        url,
-        options,
-      });
-      await refreshQueue();
-      return result;
+      // NOTE: fetchMetadata is only for preview — it must NOT refresh the queue.
+      // Calling refreshQueue here was causing unnecessary full-queue reloads on
+      // every URL paste. Queue state is kept in sync via real-time backend events.
+      return invoke<FetchMetadataResult>("fetch_metadata", { url, options });
     },
-    [refreshQueue]
+    []
   );
 
   const previewPlaylist = useCallback(

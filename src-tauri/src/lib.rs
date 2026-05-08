@@ -168,6 +168,7 @@ pub struct FetchMetadataResult {
     filesize_bytes: Option<u64>,
     playlist_title: Option<String>,
     playlist_count_hint: Option<u64>,
+    pub available_qualities: Vec<ytdlp::VideoQualityOption>,
 }
 
 /// A single video entry from playlist preview (without adding to queue).
@@ -321,6 +322,7 @@ async fn fetch_metadata(
         filesize_bytes: meta.filesize_bytes,
         playlist_title: meta.playlist_title,
         playlist_count_hint: meta.playlist_count_hint,
+        available_qualities: meta.available_qualities,
     })
 }
 

@@ -17,6 +17,10 @@
     /* Button specific */
     --button-primary-bg: var(--brand-blue);
     --button-primary-hover: var(--brand-blue-light);
+
+    /* Timing */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @theme inline {
@@ -39,13 +43,45 @@
     }
 }
 
+/* ─── Base ──────────────────────────────────────────────── */
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
 body {
     background: var(--background);
     color: var(--foreground);
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* Global cursor styles for interactive elements */
+/* ─── Text Selection ─────────────────────────────────────── */
+::selection {
+    background: rgba(37, 99, 235, 0.25);
+    color: inherit;
+}
+
+/* ─── Custom Scrollbar ───────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(113, 113, 122, 0.4);
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(113, 113, 122, 0.6);
+}
+
+/* ─── Cursor ─────────────────────────────────────────────── */
 button,
 [type="button"],
 [type="submit"],
@@ -66,18 +102,18 @@ select:disabled {
     cursor: not-allowed;
 }
 
-/* Brand gradient button utility class */
+/* ─── Brand Button ───────────────────────────────────────── */
 .btn-brand {
     background: var(--brand-gradient);
     color: white;
     font-weight: 600;
-    transition: all 0.2s ease;
+    transition: all 0.2s var(--ease-smooth);
     border: none;
 }
 
 .btn-brand:hover:not(:disabled) {
     background: var(--brand-gradient-hover);
-    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
     transform: translateY(-1px);
 }
 
@@ -87,6 +123,87 @@ select:disabled {
 }
 
 .btn-brand:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
+}
+
+/* ─── Glass Effect ───────────────────────────────────────── */
+.glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Progress Bar Shimmer (indeterminate) ───────────────── */
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(200%);
+    }
+}
+
+.progress-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.15) 50%,
+            transparent 100%);
+    animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* ─── Fade-in animation ──────────────────────────────────── */
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.25s var(--ease-smooth) both;
+}
+
+/* ─── Scale-in animation ─────────────────────────────────── */
+@keyframes scale-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-scale-in {
+    animation: scale-in 0.2s var(--ease-spring) both;
+}
+
+/* ─── Status pill pulse ──────────────────────────────────── */
+@keyframes status-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.55;
+    }
+}
+
+.animate-status-pulse {
+    animation: status-pulse 1.8s ease-in-out infinite;
 }

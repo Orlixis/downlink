@@ -95,6 +95,7 @@ export interface FetchMetadataResult {
   filesize_bytes: number | null;
   playlist_title: string | null;
   playlist_count_hint: number | null;
+  available_qualities: VideoQualityOption[];
 }
 
 // Expand playlist options
@@ -309,6 +310,24 @@ export type DownlinkEvent =
   | DownloadFailedEvent
   | { event: DownlinkEventType; data: unknown };
 
+// A discrete quality option from yt-dlp's format list
+export interface VideoQualityOption {
+  height: number | null;
+  label: string;            // "4K", "1080p", "720p", "Audio Only"
+  filesize_approx: number | null;
+  format_string: string;    // yt-dlp -f argument, or "custom:<fmt>" for preset_id
+  is_audio_only: boolean;
+}
+
+// Per-URL preview data (used by multi-preview panel)
+export interface UrlPreviewItem {
+  url: string;
+  loading: boolean;
+  data: FetchMetadataResult | null;
+  error: string | null;
+  qualitiesLoading?: boolean;  // true while background yt-dlp quality fetch is running
+}
+
 // UI state types
 export interface PreviewState {
   loading: boolean;
@@ -320,6 +339,90 @@ export interface PreviewState {
 export interface SettingsModalState {
   isOpen: boolean;
   activeTab: "general" | "formats" | "sponsorblock" | "subtitles" | "updates" | "privacy" | "network";
+}
+
+// ============================================================================
+// URL Normalization
+// ============================================================================
+
+/**
+ * Prepends `https://` to tokens that look like bare domain URLs (no scheme).
+ *
+ * Examples that get normalized:
+ *   "youtube.com/watch?v=abc"          → "https://youtube.com/watch?v=abc"
+ *   "luciferdonghua.in/episode-21/v/4" → "https://luciferdonghua.in/episode-21/v/4"
+ *
+ * Tokens that already have http(s):// or don't look like URLs are left alone.
+ * Whitespace between tokens is preserved.
+ */
+export function normalizeBareUrls(text: string): string {
+  // Split on whitespace (including newlines) while preserving the delimiters
+  // so we can rejoin without altering the user's formatting.
+  return text
+    .split(/(\s+)/)
+    .map((part) => {
+      // Preserve whitespace tokens unchanged
+      if (!part || /^\s+$/.test(part)) return part;
+      // Already has a valid scheme — leave as-is
+      if (/^https?:\/\//i.test(part)) return part;
+      // Conservative bare-URL heuristic:
+      //   - Starts with a hostname-like token (letter/digit, optional hyphens)
+      //   - Contains at least one dot followed by a 2+ char TLD
+      //   - Optionally followed by a path starting with /
+      //   - No scheme characters (colons) before the dot
+      if (
+        /^[a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0-9\-]+)*\.[a-zA-Z]{2,}(?:\/[^\s]*)?$/.test(
+          part
+        ) &&
+        !part.includes(":")
+      ) {
+        return `https://${part}`;
+      }
+      return part;
+    })
+    .join("");
+}
+
+// ============================================================================
+// URL Range Pattern Expansion
+// ============================================================================
+
+/**
+ * Expands a single URL containing a [start-end] range pattern into multiple URLs.
+ *
+ * Examples:
+ *   "https://site.com/ep-[21-24]/watch"  → 4 URLs (ep-21 … ep-24)
+ *   "https://site.com/ep-[01-09]/watch"  → 9 URLs (ep-01 … ep-09, zero-padded)
+ *   "https://site.com/page"              → [original url] (no pattern, passthrough)
+ *
+ * Only the FIRST [N-M] occurrence in the URL is expanded.
+ * Capped at 500 items to prevent accidents.
+ */
+export function expandUrlPattern(url: string): string[] {
+  const match = /\[(\d+)-(\d+)\]/.exec(url);
+  if (!match) return [url];
+
+  const raw1 = match[1];
+  const raw2 = match[2];
+  const start = parseInt(raw1, 10);
+  const end = parseInt(raw2, 10);
+
+  if (isNaN(start) || isNaN(end) || start > end || end - start >= 500) {
+    // Pattern present but invalid or too large — pass through unchanged
+    return [url];
+  }
+
+  // Preserve zero-padding if either bound has a leading zero
+  const padLen =
+    raw1.startsWith("0") ? raw1.length
+      : raw2.startsWith("0") ? raw2.length
+        : 0;
+
+  return Array.from({ length: end - start + 1 }, (_, k) => {
+    const i = start + k;
+    const num = padLen > 0 ? String(i).padStart(padLen, "0") : String(i);
+    return url.replace(/\[\d+-\d+\]/, num);
+  });
 }
 
 // Helper functions for formatting

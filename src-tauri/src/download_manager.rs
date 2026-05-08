@@ -325,6 +325,19 @@ pub struct ParsedProgress {
     pub phase: Option<String>,
 }
 
+/// Extract the hostname from a URL string. Used for per-domain concurrency control.
+fn extract_hostname(url: &str) -> String {
+    let s = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    let host_and_path = s.split('/').next().unwrap_or(s);
+    host_and_path
+        .split(':')
+        .next()
+        .unwrap_or(host_and_path)
+        .to_ascii_lowercase()
+}
+
 /// Download Manager handles scheduling and execution of downloads.
 /// Uses lazy initialization to avoid spawning tasks before runtime is ready.
 pub struct DownloadManager {
@@ -768,8 +781,22 @@ async fn execute_download(
     mut cancel_rx: broadcast::Receiver<()>,
     event_tx: mpsc::Sender<DownlinkEvent>,
 ) -> Result<Option<String>, DownloadError> {
-    let preset =
-        Preset::get_by_id(preset_id).unwrap_or_else(|| Preset::builtin_presets()[0].clone());
+    // Support "custom:<format_string>" as a preset_id for user-selected qualities.
+    // This avoids any DB schema change — the format string is encoded in the ID.
+    let preset = if let Some(fmt) = preset_id.strip_prefix("custom:") {
+        Preset {
+            id: preset_id.to_string(),
+            name: "Custom Quality".to_string(),
+            yt_dlp_args: vec![
+                "-f".to_string(),
+                fmt.to_string(),
+                "--merge-output-format".to_string(),
+                "mp4".to_string(),
+            ],
+        }
+    } else {
+        Preset::get_by_id(preset_id).unwrap_or_else(|| Preset::builtin_presets()[0].clone())
+    };
 
     let config_guard = config.read().await;
 

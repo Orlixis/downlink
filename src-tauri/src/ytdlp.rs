@@ -10,6 +10,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use anyhow::{anyhow, Context, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -50,6 +51,17 @@ pub struct PreviewMetadata {
     pub is_playlist: bool,
     pub playlist_title: Option<String>,
     pub playlist_count_hint: Option<u64>,
+    pub available_qualities: Vec<VideoQualityOption>,
+}
+
+/// A discrete quality option extracted from yt-dlp's format list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoQualityOption {
+    pub height: Option<u32>,
+    pub label: String, // "4K", "1080p", "720p", "Audio Only"
+    pub filesize_approx: Option<u64>,
+    pub format_string: String, // the yt-dlp -f argument string
+    pub is_audio_only: bool,
 }
 
 /// A single playlist entry returned by enumeration.
@@ -128,6 +140,17 @@ impl YtDlpRunner {
             "--dump-json".to_string(),
             "--no-warnings".to_string(),
             "--newline".to_string(),
+            // Preview-tuned flags: faster than defaults but not so aggressive that complex
+            // streaming sites (which do multiple HTTP round-trips per page) fail.
+            //
+            // NOTE: --no-check-formats was removed — it breaks many streaming site extractors
+            // that rely on format-check to resolve the actual video embed URL.
+            "--socket-timeout".to_string(),
+            "15".to_string(), // 15 s per socket op
+            "--retries".to_string(),
+            "2".to_string(), // 1 retry on network failure
+            "--extractor-retries".to_string(),
+            "2".to_string(), // 1 retry in extractor
         ];
 
         if has_playlist_param {
@@ -425,6 +448,8 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
         .and_then(|x| x.as_u64())
         .or_else(|| v.get("n_entries").and_then(|x| x.as_u64()));
 
+    let available_qualities = parse_quality_options(&v);
+
     Ok(PreviewMetadata {
         url: webpage_url,
         title,
@@ -435,7 +460,105 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
         is_playlist,
         playlist_title,
         playlist_count_hint,
+        available_qualities,
     })
+}
+
+/// Map a video height to a human-readable label and a yt-dlp format selection string.
+fn height_label_and_format(height: u32) -> (String, String) {
+    let label = match height {
+        h if h >= 2160 => "4K".to_string(),
+        h if h >= 1440 => "1440p".to_string(),
+        h if h >= 1080 => "1080p".to_string(),
+        h if h >= 720 => "720p".to_string(),
+        h if h >= 480 => "480p".to_string(),
+        h => format!("{}p", h),
+    };
+    let format_string = format!(
+        "bestvideo[height<={}]+bestaudio/best[height<={}]",
+        height, height
+    );
+    (label, format_string)
+}
+
+/// Parse the `formats` array from a yt-dlp JSON dump into quality options.
+/// Groups by unique height, picks the entry with the largest filesize per group,
+/// and appends an "Audio Only" option if audio-only streams are available.
+fn parse_quality_options(v: &serde_json::Value) -> Vec<VideoQualityOption> {
+    use std::collections::HashMap;
+
+    let formats = match v.get("formats").and_then(|f| f.as_array()) {
+        Some(arr) => arr,
+        None => return vec![],
+    };
+
+    // height (pixels) → max video filesize seen for that height
+    let mut height_map: HashMap<u32, u64> = HashMap::new();
+    let mut best_audio_filesize: u64 = 0;
+    let mut has_audio_only = false;
+
+    for fmt in formats {
+        let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
+        let acodec = fmt.get("acodec").and_then(|v| v.as_str()).unwrap_or("none");
+        let height = fmt.get("height").and_then(|h| h.as_u64()).map(|h| h as u32);
+        let filesize = fmt
+            .get("filesize")
+            .and_then(|f| f.as_u64())
+            .or_else(|| fmt.get("filesize_approx").and_then(|f| f.as_u64()))
+            .unwrap_or(0);
+
+        let has_video = !vcodec.is_empty() && vcodec != "none";
+        let has_audio = !acodec.is_empty() && acodec != "none";
+
+        if has_video {
+            if let Some(h) = height {
+                if h >= 360 {
+                    let entry = height_map.entry(h).or_insert(0);
+                    if filesize > *entry {
+                        *entry = filesize;
+                    }
+                }
+            }
+        } else if has_audio && !has_video {
+            has_audio_only = true;
+            if filesize > best_audio_filesize {
+                best_audio_filesize = filesize;
+            }
+        }
+    }
+
+    // Build sorted list (highest quality first)
+    let mut qualities: Vec<VideoQualityOption> = height_map
+        .iter()
+        .map(|(&height, &filesize)| {
+            let (label, format_string) = height_label_and_format(height);
+            VideoQualityOption {
+                height: Some(height),
+                label,
+                filesize_approx: if filesize > 0 { Some(filesize) } else { None },
+                format_string,
+                is_audio_only: false,
+            }
+        })
+        .collect();
+
+    qualities.sort_by(|a, b| b.height.cmp(&a.height));
+
+    if has_audio_only {
+        qualities.push(VideoQualityOption {
+            height: None,
+            label: "Audio Only".to_string(),
+            filesize_approx: if best_audio_filesize > 0 {
+                Some(best_audio_filesize)
+            } else {
+                None
+            },
+            format_string: "bestaudio".to_string(),
+            is_audio_only: true,
+        });
+    }
+
+    qualities
 }
 
 fn parse_playlist_entry(json_line: &str, playlist_url: &str) -> Result<PlaylistEntry> {

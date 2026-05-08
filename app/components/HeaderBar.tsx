@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { Plus, Settings, Loader2 } from "lucide-react";
+import { Settings, Loader2, ClipboardPaste, X } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface HeaderBarProps {
   urlInput: string;
@@ -10,7 +11,9 @@ interface HeaderBarProps {
   onSubmit: () => void;
   onSettingsClick: () => void;
   isLoading?: boolean;
-  inputRef?: React.RefObject<HTMLInputElement | null>;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  /** Number of valid URLs extracted from the input */
+  urlCount?: number;
 }
 
 export function HeaderBar({
@@ -21,58 +24,120 @@ export function HeaderBar({
   onSettingsClick,
   isLoading = false,
   inputRef,
+  urlCount = 0,
 }: HeaderBarProps) {
+  const hasInput = urlInput.trim().length > 0;
+
+  // Internal ref for auto-resize; merged with the external inputRef via callback
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  const resolvedRef = inputRef ?? internalRef;
+
+  // Auto-grow the textarea to fit its content (up to ~5 lines / 120 px)
+  const adjustHeight = useCallback(() => {
+    const el = resolvedRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [resolvedRef]);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [urlInput, adjustHeight]);
+
+  // Enter = submit, Shift+Enter = newline (for multi-URL paste workflows)
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        onSubmit();
+      }
+    },
+    [onSubmit]
+  );
+
   return (
-    <div className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
-      {/* Logo */}
-      <div className="flex-shrink-0">
+    <div className="flex items-start gap-2.5 border-b border-zinc-800/80 bg-zinc-950 px-3 py-2.5">
+      {/* Logo — aligned to top so it doesn't stretch when textarea grows */}
+      <div className="flex-shrink-0 pt-0.5">
         <Image
           src="/downlink-square.png"
           alt="Downlink"
-          width={32}
-          height={32}
-          className="rounded-lg"
+          width={28}
+          height={28}
+          className="rounded-md"
           priority
         />
       </div>
 
-      {/* URL Input with integrated paste button */}
-      <div className="flex-1 relative">
-        <input
-          ref={inputRef}
-          type="text"
+      {/* Auto-growing textarea */}
+      <div className="relative flex-1">
+        <textarea
+          ref={resolvedRef}
           value={urlInput}
           onChange={(e) => onUrlChange(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
-          placeholder="Paste video URL here..."
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 pr-12 text-sm text-white placeholder-zinc-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+          onKeyDown={handleKeyDown}
+          onInput={adjustHeight}
+          placeholder={"Paste one or more video URLs here…"}
+          rows={1}
+          className="w-full resize-none overflow-hidden rounded-lg border border-zinc-700/70 bg-zinc-900 py-2 pl-3 pr-20 text-sm leading-5 text-white placeholder-zinc-500 outline-none transition-[height,border-color,box-shadow] duration-150 focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/20"
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          data-gramm="false"
+          style={{ minHeight: "36px" }}
         />
 
-        {/* Loading spinner or paste button inside input */}
-        {isLoading ? (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-          </div>
-        ) : (
-          <button
-            onClick={onPaste}
-            className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-blue-400 transition-colors p-1 rounded hover:bg-zinc-800/50"
-            title="Paste from clipboard (⌘V)"
-            type="button"
-          >
-            <Plus className="h-5 w-5" />
-          </button>
-        )}
+        {/* Controls pinned to top-right inside textarea */}
+        <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5">
+          {/* URL count badge */}
+          {urlCount > 1 && (
+            <span className="mr-1 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400">
+              {urlCount}
+            </span>
+          )}
+
+          {/* Clear button */}
+          {hasInput && !isLoading && (
+            <button
+              type="button"
+              onClick={() => onUrlChange("")}
+              className="flex h-6 w-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              title="Clear input"
+              aria-label="Clear URL input"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Loading spinner or paste button */}
+          {isLoading ? (
+            <div className="flex h-6 w-6 items-center justify-center">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onPaste}
+              className="flex h-6 w-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-blue-400"
+              title="Paste from clipboard (⌘V)"
+              aria-label="Paste URL from clipboard"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Settings button */}
+      {/* Settings button — aligned to top */}
       <button
-        onClick={onSettingsClick}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
-        title="Settings"
         type="button"
+        onClick={onSettingsClick}
+        className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+        title="Settings"
+        aria-label="Open settings"
       >
-        <Settings className="h-5 w-5" />
+        <Settings className="h-4 w-4" />
       </button>
     </div>
   );

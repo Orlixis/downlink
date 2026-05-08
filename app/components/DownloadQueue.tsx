@@ -1,8 +1,9 @@
 "use client";
 
-import { CloudDownload, Clock, Trash2 } from "lucide-react";
+import { CloudDownload, Clock, Trash2, Zap } from "lucide-react";
 import { DownloadItem } from "./DownloadItem";
 import type { QueueItem } from "../types";
+import { formatSpeed } from "../types";
 
 interface DownloadQueueProps {
   queue: QueueItem[];
@@ -31,58 +32,118 @@ export function DownloadQueue({
   onClearQueue,
   onClearHistory,
 }: DownloadQueueProps) {
-  const activeCount = queue.filter(
-    (q) => q.status === "downloading" || q.status === "fetching" || q.status === "queued"
+  const activeItems = queue.filter(
+    (q) => q.status === "downloading" || q.status === "postprocessing"
+  );
+  const pendingCount = queue.filter(
+    (q) => q.status === "queued" || q.status === "ready" || q.status === "fetching"
   ).length;
-  const completedCount = history.length;
+
+  // Aggregate speed of all active downloads
+  const totalSpeedBps = activeItems.reduce(
+    (sum, item) => sum + (item.speed_bps ?? 0),
+    0
+  );
+  const hasActiveDownloads = activeItems.length > 0;
 
   const items = showHistory ? history : queue;
   const isEmpty = items.length === 0;
 
   return (
-    <div className="w-80 flex flex-col bg-zinc-900/50">
-      {/* Tabs */}
-      <div className="flex border-b border-zinc-800">
+    <div className="flex w-[300px] flex-col border-l border-zinc-800/80 bg-zinc-950">
+      {/* ── Header / Tabs ──────────────────────────────── */}
+      <div className="flex border-b border-zinc-800/80 px-1 pt-1">
         <button
+          type="button"
           onClick={() => onShowHistoryChange(false)}
-          className={`flex-1 py-3 text-center text-sm font-medium transition-colors flex items-center justify-center gap-2 ${!showHistory
-              ? "text-white border-b-2 border-blue-500"
-              : "text-zinc-400 hover:text-white"
+          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg px-2 py-2.5 text-xs font-medium transition-colors ${!showHistory
+              ? "text-white"
+              : "text-zinc-500 hover:text-zinc-300"
             }`}
         >
-          <CloudDownload className="h-4 w-4" />
-          Downloads ({activeCount})
+          <CloudDownload className="h-3.5 w-3.5" />
+          <span>Downloads</span>
+          {queue.length > 0 && (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${!showHistory ? "bg-blue-500/20 text-blue-400" : "bg-zinc-800 text-zinc-500"
+                }`}
+            >
+              {queue.length}
+            </span>
+          )}
+          {!showHistory && (
+            <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-blue-500" />
+          )}
         </button>
+
         <button
+          type="button"
           onClick={() => onShowHistoryChange(true)}
-          className={`flex-1 py-3 text-center text-sm font-medium transition-colors flex items-center justify-center gap-2 ${showHistory
-              ? "text-white border-b-2 border-blue-500"
-              : "text-zinc-400 hover:text-white"
+          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg px-2 py-2.5 text-xs font-medium transition-colors ${showHistory
+              ? "text-white"
+              : "text-zinc-500 hover:text-zinc-300"
             }`}
         >
-          <Clock className="h-4 w-4" />
-          History ({completedCount})
+          <Clock className="h-3.5 w-3.5" />
+          <span>History</span>
+          {history.length > 0 && (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${showHistory ? "bg-blue-500/20 text-blue-400" : "bg-zinc-800 text-zinc-500"
+                }`}
+            >
+              {history.length}
+            </span>
+          )}
+          {showHistory && (
+            <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-blue-500" />
+          )}
         </button>
       </div>
 
-      {/* Download list */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      {/* ── Aggregate stats bar (active downloads only) ── */}
+      {!showHistory && hasActiveDownloads && (
+        <div className="flex items-center gap-2 border-b border-zinc-800/60 bg-blue-500/5 px-3 py-2">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20">
+            <Zap className="h-3 w-3 text-blue-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="text-[11px] font-medium text-blue-300">
+              {activeItems.length} downloading
+              {pendingCount > 0 && (
+                <span className="text-zinc-500">, {pendingCount} queued</span>
+              )}
+            </span>
+          </div>
+          {totalSpeedBps > 0 && (
+            <span className="text-[11px] font-semibold text-blue-400 tabular-nums">
+              {formatSpeed(totalSpeedBps)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Item list ──────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full text-center p-4">
+          <div className="flex h-full flex-col items-center justify-center px-4 py-12 text-center">
             {showHistory ? (
               <>
-                <Clock className="h-12 w-12 text-zinc-700 mb-3" />
-                <p className="text-sm text-zinc-500">No history yet</p>
-                <p className="text-xs text-zinc-600 mt-1">
-                  Completed downloads appear here
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/80">
+                  <Clock className="h-6 w-6 text-zinc-600" />
+                </div>
+                <p className="text-sm font-medium text-zinc-500">No history yet</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Completed downloads will appear here
                 </p>
               </>
             ) : (
               <>
-                <CloudDownload className="h-12 w-12 text-zinc-700 mb-3" />
-                <p className="text-sm text-zinc-500">No active downloads</p>
-                <p className="text-xs text-zinc-600 mt-1">
-                  Paste a URL to get started
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/80">
+                  <CloudDownload className="h-6 w-6 text-zinc-600" />
+                </div>
+                <p className="text-sm font-medium text-zinc-500">No downloads yet</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Paste a URL above to get started
                 </p>
               </>
             )}
@@ -102,14 +163,15 @@ export function DownloadQueue({
         )}
       </div>
 
-      {/* Bottom actions */}
+      {/* ── Footer: clear button ───────────────────────── */}
       {!isEmpty && (
-        <div className="border-t border-zinc-800 p-3">
+        <div className="border-t border-zinc-800/80 p-2">
           <button
+            type="button"
             onClick={showHistory ? onClearHistory : onClearQueue}
-            className="w-full flex items-center justify-center gap-2 rounded-lg bg-zinc-800 py-2 text-sm text-zinc-400 hover:bg-zinc-700 hover:text-white transition-colors"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
             {showHistory ? "Clear History" : "Clear Queue"}
           </button>
         </div>
