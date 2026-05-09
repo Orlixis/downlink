@@ -89,6 +89,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Sync version from tag
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "Syncing version to $VERSION"
+
+          # Patch Cargo.toml (first version = line under [package])
+          sed -i.bak "0,/^version = \"[^\"]*\"/s//version = \"$VERSION\"/" src-tauri/Cargo.toml
+          rm -f src-tauri/Cargo.toml.bak
+
+          # Patch tauri.conf.json
+          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          rm -f src-tauri/tauri.conf.json.bak
+
+          echo "Cargo.toml: $(grep '^version' src-tauri/Cargo.toml | head -1)"
+          echo "tauri.conf.json: $(grep '\"version\"' src-tauri/tauri.conf.json | head -1)"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -111,6 +129,7 @@ jobs:
       - name: Create binaries directory
         shell: bash
         run: mkdir -p src-tauri/binaries
+
 
       # Download yt-dlp
       - name: Download yt-dlp (macOS)
