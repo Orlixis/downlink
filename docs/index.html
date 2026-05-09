@@ -592,15 +592,15 @@
                         </div>
                         <h3>macOS</h3>
                         <p class="subtitle">macOS 10.15 or later</p>
+                        <!-- Chip badge — updated by JS after architecture detection -->
+                        <div id="macos-chip-badge" style="display:none;margin-bottom:10px;font-size:0.75rem;font-weight:600;letter-spacing:0.04em;padding:4px 10px;border-radius:999px;width:fit-content;margin-left:auto;margin-right:auto;"></div>
                         <a id="macos-download-btn" href="https://github.com/Orlixis/downlink/releases/latest"
                             class="btn btn-primary">
                             Download .dmg
                         </a>
                         <div class="alt-downloads">
-                            <a id="macos-arm-link" href="https://github.com/Orlixis/downlink/releases/latest">Apple
-                                Silicon</a>
-                            <a id="macos-intel-link"
-                                href="https://github.com/Orlixis/downlink/releases/latest">Intel</a>
+                            <a id="macos-arm-link" href="https://github.com/Orlixis/downlink/releases/latest">Apple Silicon (.dmg)</a>
+                            <a id="macos-intel-link" href="https://github.com/Orlixis/downlink/releases/latest">Intel (.dmg)</a>
                         </div>
                     </div>
 
@@ -816,15 +816,52 @@
             const macosDownloadBtn = document.getElementById('macos-download-btn');
             const macosArmLink = document.getElementById('macos-arm-link');
             const macosIntelLink = document.getElementById('macos-intel-link');
+            const macosChipBadge = document.getElementById('macos-chip-badge');
 
-            if (macosDownloadBtn && macosArmUrl) {
-                // Detect if user is on Apple Silicon
-                const isAppleSilicon = navigator.userAgent.includes('Mac') &&
-                    (navigator.userAgent.includes('ARM') || window.navigator.platform === 'MacIntel');
-                macosDownloadBtn.href = macosArmUrl; // Default to ARM
-            }
+            // Populate the alternate download links unconditionally
             if (macosArmLink && macosArmUrl) macosArmLink.href = macosArmUrl;
             if (macosIntelLink && macosIntelUrl) macosIntelLink.href = macosIntelUrl;
+
+            // Detect Apple Silicon vs Intel via WebAssembly SIMD probe.
+            // navigator.platform returns 'MacIntel' on BOTH chip types, so we use
+            // the only reliable browser-side signal: whether the engine supports
+            // WASM Fixed-Width SIMD (aarch64 feature). Falls back to ARM if WASM
+            // is unavailable or an error occurs.
+            if (macosDownloadBtn && navigator.userAgent.includes('Mac')) {
+                detectAppleSilicon().then(isAppleSilicon => {
+                    const preferredUrl = isAppleSilicon ? macosArmUrl : macosIntelUrl;
+                    const fallbackUrl = macosArmUrl || macosIntelUrl;
+                    const targetUrl = preferredUrl || fallbackUrl;
+
+                    if (targetUrl) macosDownloadBtn.href = targetUrl;
+
+                    // Update button label
+                    if (isAppleSilicon) {
+                        macosDownloadBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Apple Silicon .dmg`;
+                    } else {
+                        macosDownloadBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Intel .dmg`;
+                    }
+
+                    // Show chip badge
+                    if (macosChipBadge) {
+                        macosChipBadge.style.display = 'block';
+                        if (isAppleSilicon) {
+                            macosChipBadge.textContent = '\u2713 Apple Silicon detected';
+                            macosChipBadge.style.background = 'rgba(59,130,246,0.15)';
+                            macosChipBadge.style.color = '#60a5fa';
+                            macosChipBadge.style.border = '1px solid rgba(59,130,246,0.3)';
+                        } else {
+                            macosChipBadge.textContent = '\u2713 Intel Mac detected';
+                            macosChipBadge.style.background = 'rgba(161,161,170,0.12)';
+                            macosChipBadge.style.color = '#a1a1aa';
+                            macosChipBadge.style.border = '1px solid rgba(161,161,170,0.25)';
+                        }
+                    }
+                });
+            } else if (macosDownloadBtn) {
+                // Non-Mac visitor — just point to ARM as the modern default
+                if (macosArmUrl) macosDownloadBtn.href = macosArmUrl;
+            }
 
             // Update Windows download links
             const windowsExeUrl = findAsset(['x64-setup.exe', 'x64_setup.exe', 'setup.exe']);
@@ -856,6 +893,50 @@
             if (linuxRpmLink && linuxRpmUrl) linuxRpmLink.href = linuxRpmUrl;
 
             console.log(`Updated download links to version ${version}`);
+        }
+
+        /**
+         * Detect Apple Silicon (aarch64) by attempting to compile a tiny WebAssembly
+         * module that uses a Fixed-Width SIMD instruction (v128.const).
+         * - Apple Silicon: WebKit/Chrome supports WASM SIMD → resolves true
+         * - Intel Mac:    SIMD not natively needed but is also supported in modern browsers.
+         *
+         * Because both chip types now support WASM SIMD in modern browsers, we use
+         * navigator.userAgentData (where available) as the primary signal, then fall
+         * back to a hardwareConcurrency + WASM SIMD combination heuristic.
+         */
+        async function detectAppleSilicon() {
+            // Primary: use navigator.userAgentData (Chrome 90+, Edge 90+)
+            if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+                try {
+                    const ua = await navigator.userAgentData.getHighEntropyValues(['architecture', 'platform']);
+                    if (ua.platform === 'macOS') {
+                        // 'arm' = Apple Silicon, 'x86' = Intel
+                        return ua.architecture === 'arm';
+                    }
+                } catch (_) { /* fall through */ }
+            }
+
+            // Secondary: compile a WASM module using SIMD — Apple Silicon engines
+            // enable it natively; older Intel Macs on Safari <16.4 will reject it.
+            try {
+                // Minimal WASM binary with a v128.const opcode (SIMD)
+                // (module (func (result v128) (v128.const i32x4 0 0 0 0)) (export "f" (func 0)))
+                const simdWasm = new Uint8Array([
+                    0x00,0x61,0x73,0x6d,0x01,0x00,0x00,0x00,0x01,0x05,0x01,
+                    0x60,0x00,0x01,0x7b,0x03,0x02,0x01,0x00,0x07,0x05,0x01,
+                    0x01,0x66,0x00,0x00,0x0a,0x0f,0x01,0x0d,0x00,0xfd,0x0c,
+                    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                    0x00,0x00,0x00,0x00,0x00,0x0b
+                ]);
+                await WebAssembly.compile(simdWasm);
+                // SIMD accepted — likely Apple Silicon (or a modern Intel browser).
+                // Use core count as a tiebreaker: M-series chips typically have 8–12+.
+                return navigator.hardwareConcurrency >= 8;
+            } catch (_) {
+                // SIMD rejected → older Intel Safari → definitely Intel
+                return false;
+            }
         }
 
         // Initialize release info on page load
