@@ -104,8 +104,13 @@ jobs:
           sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
           rm -f src-tauri/tauri.conf.json.bak
 
+          # Patch package.json
+          sed -i.bak "0,/\"version\": \"[^\"]*\"/s//\"version\": \"$VERSION\"/" package.json
+          rm -f package.json.bak
+
           echo "Cargo.toml: $(grep '^version' src-tauri/Cargo.toml | head -1)"
           echo "tauri.conf.json: $(grep '\"version\"' src-tauri/tauri.conf.json | head -1)"
+          echo "package.json: $(grep '\"version\"' package.json | head -1)"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
