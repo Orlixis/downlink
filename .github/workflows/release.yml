@@ -220,8 +220,7 @@ jobs:
           releaseBody: ""
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: true
-          updaterJsonKeepUniversal: true
+          includeUpdaterJson: false
           args: --target ${{ matrix.target }}
 
       - name: List generated signature files
