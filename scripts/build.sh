@@ -237,19 +237,19 @@ build_app() {
 
     cd "$PROJECT_DIR"
 
-    # Install npm dependencies if needed
+    # Install bun dependencies if needed
     if [[ ! -d "node_modules" ]]; then
-        log_info "Installing npm dependencies..."
-        npm install
+        log_info "Installing bun dependencies..."
+        bun install
     fi
 
     # Build with Tauri
     if [[ "$platform" == "macos-universal" ]]; then
-        npm run tauri:build -- --target universal-apple-darwin
+        bun run tauri:build --target universal-apple-darwin
     elif [[ -n "$rust_target" ]]; then
-        npm run tauri:build -- --target "$rust_target"
+        bun run tauri:build --target "$rust_target"
     else
-        npm run tauri:build
+        bun run tauri:build
     fi
 
     log_success "Build complete!"
