@@ -97,21 +97,20 @@ jobs:
           VERSION="${TAG#v}"
           echo "Syncing version to $VERSION"
 
-          # Patch Cargo.toml (first version = line under [package])
-          sed -i.bak "0,/^version = \"[^\"]*\"/s//version = \"$VERSION\"/" src-tauri/Cargo.toml
-          rm -f src-tauri/Cargo.toml.bak
+          # Patch Cargo.toml — perl works identically on GNU/Linux and BSD/macOS
+          perl -i -pe "s/^version = \"[^\"]*\"/version = \"$VERSION\"/ if !\$done++" src-tauri/Cargo.toml
 
-          # Patch tauri.conf.json
-          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          rm -f src-tauri/tauri.conf.json.bak
+          # Patch tauri.conf.json — use jq for safe JSON manipulation
+          tmp=$(mktemp)
+          jq ".version = \"$VERSION\"" src-tauri/tauri.conf.json > "$tmp" && mv "$tmp" src-tauri/tauri.conf.json
 
-          # Patch package.json
-          sed -i.bak "0,/\"version\": \"[^\"]*\"/s//\"version\": \"$VERSION\"/" package.json
-          rm -f package.json.bak
+          # Patch package.json — use jq for safe JSON manipulation
+          tmp=$(mktemp)
+          jq ".version = \"$VERSION\"" package.json > "$tmp" && mv "$tmp" package.json
 
-          echo "Cargo.toml: $(grep '^version' src-tauri/Cargo.toml | head -1)"
-          echo "tauri.conf.json: $(grep '\"version\"' src-tauri/tauri.conf.json | head -1)"
-          echo "package.json: $(grep '\"version\"' package.json | head -1)"
+          echo "Cargo.toml:       $(grep '^version' src-tauri/Cargo.toml | head -1)"
+          echo "tauri.conf.json:  $(jq -r '.version' src-tauri/tauri.conf.json)"
+          echo "package.json:     $(jq -r '.version' package.json)"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
