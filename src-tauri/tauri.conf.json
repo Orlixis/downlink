@@ -57,7 +57,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/ProvLeon/downlink/releases/latest/download/latest.json"
+        "https://github.com/Orlixis/downlink/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1M0Y3MjZBRDA5ODgwNjAKUldSZ2dKalFhbkkvaGJOSERsNXFXQkQyN2Q4M0tscVlvK1lKQkFwSmxhQ1Q2dnZwSFhZZ0tNWVUK"
     }

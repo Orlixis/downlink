@@ -434,3 +434,24 @@ jobs:
             "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=latest.json"
 
           echo "latest.json uploaded successfully!"
+
+      - name: Commit latest.json back to repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Copy the freshly-generated latest.json into the repo root
+          cp latest.json $GITHUB_WORKSPACE/latest.json
+
+          cd $GITHUB_WORKSPACE
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add latest.json
+          # Only commit if there are actual changes
+          if git diff --cached --quiet; then
+            echo "latest.json unchanged, skipping commit"
+          else
+            git commit -m "chore: update latest.json to ${{ steps.get_version.outputs.tag }} [skip ci]"
+            git push origin HEAD:main
+            echo "latest.json committed to repo"
+          fi
