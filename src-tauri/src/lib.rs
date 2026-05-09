@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration as StdDuration, Instant};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -29,6 +31,12 @@ use events::DownlinkEvent;
 use settings::{SettingsManager, UserSettings, WindowState};
 use tool_manager::{ToolManager, ToolManagerConfig, ToolchainStatus};
 
+/// Cached metadata entry with a TTL.
+struct CachedMeta {
+    result: FetchMetadataResult,
+    fetched_at: Instant,
+}
+
 /// Shared application state.
 /// Uses lazy initialization for components that need the async runtime.
 pub struct AppState {
@@ -36,6 +44,8 @@ pub struct AppState {
     download_manager: RwLock<Option<Arc<DownloadManager>>>,
     tool_manager: RwLock<Option<Arc<ToolManager>>>,
     event_tx: Arc<Mutex<Option<mpsc::Sender<DownlinkEvent>>>>,
+    /// LRU-ish metadata cache: URL → (result, fetched_at). Max 64 entries, 10-min TTL.
+    metadata_cache: Mutex<HashMap<String, CachedMeta>>,
 }
 
 /// Helper to get or create the download manager lazily.
@@ -156,7 +166,7 @@ pub struct FetchMetadataOptions {
 }
 
 /// Result from fetching metadata.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FetchMetadataResult {
     id: Uuid,
     url: String,
@@ -301,17 +311,26 @@ async fn fetch_metadata(
         .next()
         .ok_or_else(|| "No valid http(s) URL found.".to_string())?;
 
-    // Just fetch metadata - do NOT insert into database
-    // The item will only be added to the queue when the user clicks "Download"
+    // ── Cache check ────────────────────────────────────────────
+    const CACHE_TTL: StdDuration = StdDuration::from_secs(600); // 10 minutes
+    {
+        let cache = state.metadata_cache.lock().await;
+        if let Some(entry) = cache.get(&first) {
+            if entry.fetched_at.elapsed() < CACHE_TTL {
+                log::debug!("metadata cache hit for {}", first);
+                return Ok(entry.result.clone());
+            }
+        }
+    }
+
+    // ── Cache miss: fetch ──────────────────────────────────────────
     let runner = build_ytdlp_runner(&state).await;
     let (meta, _output) = runner
         .fetch_metadata(&first)
         .await
         .map_err(|e| format!("yt-dlp metadata failed: {e}"))?;
 
-    // Return a placeholder ID (empty UUID) since we're not storing in DB yet
-    // The real ID will be created when add_urls is called
-    Ok(FetchMetadataResult {
+    let result = FetchMetadataResult {
         id: Uuid::nil(),
         url: meta.url,
         is_playlist: meta.is_playlist,
@@ -323,7 +342,79 @@ async fn fetch_metadata(
         playlist_title: meta.playlist_title,
         playlist_count_hint: meta.playlist_count_hint,
         available_qualities: meta.available_qualities,
-    })
+    };
+
+    // ── Store in cache ─────────────────────────────────────────
+    {
+        let mut cache = state.metadata_cache.lock().await;
+        // Evict stale entries and cap at 64
+        if cache.len() >= 64 {
+            cache.retain(|_, v| v.fetched_at.elapsed() < CACHE_TTL);
+        }
+        cache.insert(first, CachedMeta { result: result.clone(), fetched_at: Instant::now() });
+    }
+
+    Ok(result)
+}
+
+
+/// Phase-1 fast preview: returns title/uploader/thumbnail/duration in ~2-3s.
+/// Does NOT enumerate quality formats (that requires --dump-json).
+/// Returns null when the site/URL is unsupported.
+#[tauri::command]
+async fn fast_fetch_metadata(
+    _app: AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<Option<FetchMetadataResult>, String> {
+    let urls = url_utils::extract_urls(&url);
+    let first = match urls.into_iter().next() {
+        Some(u) => u,
+        None => return Ok(None),
+    };
+
+    // ── Cache check: full metadata cached? Return immediately ──
+    const CACHE_TTL: StdDuration = StdDuration::from_secs(600);
+    {
+        let cache = state.metadata_cache.lock().await;
+        if let Some(entry) = cache.get(&first) {
+            if entry.fetched_at.elapsed() < CACHE_TTL {
+                log::debug!("fast_fetch cache hit for {}", first);
+                return Ok(Some(entry.result.clone()));
+            }
+        }
+    }
+
+    // ── Cache miss: run fast --print path ──────────────────────
+    let runner = build_ytdlp_runner(&state).await;
+    match runner.fast_fetch_preview(&first).await {
+        Ok(Some(meta)) => {
+            let result = FetchMetadataResult {
+                id: Uuid::nil(),
+                url: meta.url,
+                is_playlist: meta.is_playlist,
+                title: meta.title,
+                uploader: meta.uploader,
+                duration_seconds: meta.duration_seconds,
+                thumbnail_url: meta.thumbnail_url,
+                filesize_bytes: None,
+                playlist_title: meta.playlist_title,
+                playlist_count_hint: meta.playlist_count_hint,
+                available_qualities: vec![],
+            };
+            // Store partial result in cache (will be overwritten by full fetch later)
+            {
+                let mut cache = state.metadata_cache.lock().await;
+                if cache.len() >= 64 {
+                    cache.retain(|_, v| v.fetched_at.elapsed() < CACHE_TTL);
+                }
+                cache.insert(first, CachedMeta { result: result.clone(), fetched_at: Instant::now() });
+            }
+            Ok(Some(result))
+        }
+        Ok(None) => Ok(None),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Preview playlist videos without adding them to the queue.
@@ -840,6 +931,15 @@ fn get_app_version() -> String {
 }
 
 #[tauri::command]
+fn set_window_title(app: AppHandle, title: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_title(&title).map_err(|e| e.to_string())
+    } else {
+        Err("Main window not found".to_string())
+    }
+}
+
+#[tauri::command]
 fn get_default_download_dir() -> String {
     dirs::download_dir()
         .unwrap_or_else(|| PathBuf::from("~/Downloads"))
@@ -1131,6 +1231,7 @@ pub fn run() {
                 download_manager: RwLock::new(None),
                 tool_manager: RwLock::new(tool_manager),
                 event_tx: Arc::new(Mutex::new(None)),
+                metadata_cache: Mutex::new(HashMap::new()),
             });
 
             // Emit ready event synchronously
@@ -1179,6 +1280,10 @@ pub fn run() {
             check_app_update,
             install_app_update,
             restart_app,
+            // Window
+            set_window_title,
+            // Fast preview
+            fast_fetch_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

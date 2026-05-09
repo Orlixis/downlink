@@ -33,7 +33,7 @@ impl YtDlpConfig {
         Self {
             yt_dlp_path,
             global_args: vec![],
-            metadata_timeout: Duration::from_secs(60), // Increased timeout for slow connections
+            metadata_timeout: Duration::from_secs(25),
         }
     }
 }
@@ -124,14 +124,81 @@ impl YtDlpRunner {
         &self.cfg.yt_dlp_path
     }
 
-    /// Fetch metadata for a URL via `yt-dlp --dump-json`.
+    /// Fast Phase-1 preview: uses `--print` to get only title / uploader /
+    /// thumbnail / duration WITHOUT fetching the full format list.
     ///
-    /// Notes:
-    /// - This is intended for preview and playlist detection.
-    /// - It uses a timeout (configurable).
-    /// - It does NOT download media.
-    /// - If the URL contains a playlist parameter, we use --playlist-items 1 to get
-    ///   playlist info while only fetching a single video's metadata.
+    /// This resolves in ~1-3 s for most sites because yt-dlp only makes the
+    /// minimum number of HTTP requests needed to identify the video — it does
+    /// NOT probe every CDN stream or enumerate formats.
+    ///
+    /// Returns None if the site is unsupported or the URL can't be resolved.
+    pub async fn fast_fetch_preview(&self, url: &str) -> Result<Option<PreviewMetadata>> {
+        let has_playlist_param = url.contains("list=") || url.contains("/playlist");
+
+        let mut args = vec![
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+            // Print exactly what we need — no JSON blob, no format table
+            "--print".to_string(),
+            "%(webpage_url)s\t%(title)s\t%(uploader|)s\t%(thumbnail|)s\t%(duration|)s".to_string(),
+            "--socket-timeout".to_string(),
+            "10".to_string(),
+            "--retries".to_string(),
+            "1".to_string(),
+            "--extractor-retries".to_string(),
+            "1".to_string(),
+        ];
+
+        if has_playlist_param {
+            args.push("--playlist-items".to_string());
+            args.push("1".to_string());
+        }
+
+        args.push(url.to_string());
+
+        let fast_timeout = Duration::from_secs(12);
+        let (lines, _output) = match self.exec_lines(&args, fast_timeout).await {
+            Ok(v) => v,
+            Err(_) => return Ok(None), // graceful fallback to full fetch
+        };
+
+        // Find the first line matching our tab-delimited print format
+        for line in &lines {
+            let parts: Vec<&str> = line.splitn(5, '\t').collect();
+            if parts.len() < 2 { continue; }
+            let resolved_url = if parts[0].starts_with("http") {
+                parts[0].to_string()
+            } else {
+                url.to_string()
+            };
+            let title = if parts[1].is_empty() || parts[1] == "NA" { None } else { Some(parts[1].to_string()) };
+            if title.is_none() { continue; } // no title = not a valid video
+
+            let uploader = parts.get(2).filter(|s| !s.is_empty() && **s != "NA").map(|s| s.to_string());
+            let thumbnail_url = parts.get(3).filter(|s| !s.is_empty() && **s != "NA").map(|s| s.to_string());
+            let duration_seconds = parts.get(4).and_then(|s| s.trim().parse::<u64>().ok());
+
+            return Ok(Some(PreviewMetadata {
+                url: resolved_url,
+                title,
+                uploader,
+                duration_seconds,
+                thumbnail_url,
+                filesize_bytes: None,
+                is_playlist: has_playlist_param,
+                playlist_title: None,
+                playlist_count_hint: None,
+                available_qualities: vec![], // populated by background fetch_metadata call
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Full metadata fetch via `--dump-json` — used for quality option enumeration
+    /// and as a fallback when fast_fetch_preview returns None.
+    ///
+    /// Slower (5-15 s) because yt-dlp must enumerate every available format stream.
     pub async fn fetch_metadata(&self, url: &str) -> Result<(PreviewMetadata, YtDlpOutput)> {
         // Check if URL contains playlist parameter (e.g., &list= or ?list=)
         let has_playlist_param = url.contains("list=") || url.contains("/playlist");
@@ -223,10 +290,84 @@ impl YtDlpRunner {
         Ok((entries, output))
     }
 
+    /// Execute yt-dlp and collect stdout lines (any line, not just JSON).
+    async fn exec_lines(
+        &self,
+        args: &[String],
+        timeout: Duration,
+    ) -> Result<(Vec<String>, YtDlpOutput)> {
+        if !self.cfg.yt_dlp_path.exists() {
+            return Err(YtDlpError {
+                kind: YtDlpErrorKind::NotFound,
+                message: format!("yt-dlp not found at {}", self.cfg.yt_dlp_path.display()),
+                output: None,
+            }.into());
+        }
+
+        let mut cmd = Command::new(&self.cfg.yt_dlp_path);
+        cmd.args(&self.cfg.global_args)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd.spawn().with_context(|| {
+            format!("failed to spawn yt-dlp: {}", self.cfg.yt_dlp_path.display())
+        })?;
+
+        let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
+        let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr"))?;
+        let mut stdout_reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr).lines();
+
+        let mut all_lines: Vec<String> = Vec::new();
+        let mut stderr_lines: Vec<String> = Vec::new();
+
+        let read_task = async {
+            loop {
+                tokio::select! {
+                    line = stdout_reader.next_line() => match line {
+                        Ok(Some(l)) => { all_lines.push(l); }
+                        Ok(None) => break,
+                        Err(e) => return Err(anyhow!("stdout read error: {e}")),
+                    },
+                    line = stderr_reader.next_line() => match line {
+                        Ok(Some(l)) => { if stderr_lines.len() < 500 { stderr_lines.push(l); } }
+                        Ok(None) => {}
+                        Err(e) => return Err(anyhow!("stderr read error: {e}")),
+                    },
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        };
+
+        let timed = tokio::time::timeout(timeout, read_task).await;
+        if timed.is_err() {
+            let _ = child.kill().await;
+            return Err(YtDlpError {
+                kind: YtDlpErrorKind::Timeout,
+                message: format!("yt-dlp timed out after {:?}", timeout),
+                output: Some(YtDlpOutput { stdout_lines: all_lines, stderr_lines, exit_code: None }),
+            }.into());
+        }
+        timed.unwrap()?;
+        let status = child.wait().await?;
+        let output = YtDlpOutput { stdout_lines: all_lines.clone(), stderr_lines, exit_code: status.code() };
+
+        if !status.success() {
+            return Err(YtDlpError {
+                kind: YtDlpErrorKind::NonZeroExit,
+                message: format!("yt-dlp exited {:?}", status.code()),
+                output: Some(output),
+            }.into());
+        }
+        Ok((all_lines, output))
+    }
+
     /// Execute yt-dlp and return each stdout line that parses as a JSON object.
-    ///
-    /// - Captures bounded stdout/stderr logs for diagnostics.
-    /// - Fails on non-zero exit.
     async fn exec_json_lines(
         &self,
         args: &[String],

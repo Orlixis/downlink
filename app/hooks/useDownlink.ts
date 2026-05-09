@@ -54,6 +54,8 @@ export interface UseDownlinkReturn {
   // URL operations
   addUrls: (urlsText: string, options: AddUrlsOptions) => Promise<AddUrlsResult>;
   fetchMetadata: (url: string, options: FetchMetadataOptions) => Promise<FetchMetadataResult>;
+  /** Fast phase-1 preview (~2-3s): title/thumbnail/uploader only, no quality enumeration */
+  fastFetchMetadata: (url: string) => Promise<FetchMetadataResult | null>;
   previewPlaylist: (playlistUrl: string) => Promise<PreviewPlaylistResult>;
   expandPlaylist: (playlistUrl: string, options: ExpandPlaylistOptions) => Promise<ExpandPlaylistResult>;
   extractUrls: (text: string) => Promise<string[]>;
@@ -339,6 +341,32 @@ export function useDownlink(): UseDownlinkReturn {
     };
   }, [isTauri, handleEvent]);
 
+  // ── Window title: show aggregate download speed while active ──
+  useEffect(() => {
+    if (!isTauri) return;
+
+    const activeItems = queue.filter(
+      (q) => q.status === "downloading" || q.status === "postprocessing"
+    );
+    const totalBps = activeItems.reduce((s, q) => s + (q.speed_bps ?? 0), 0);
+
+    const formatSpeed = (bps: number) => {
+      if (bps >= 1024 * 1024) return `${(bps / 1024 / 1024).toFixed(1)} MB/s`;
+      if (bps >= 1024) return `${(bps / 1024).toFixed(0)} KB/s`;
+      return `${bps.toFixed(0)} B/s`;
+    };
+
+    const title =
+      activeItems.length > 0 && totalBps > 0
+        ? `↓ ${formatSpeed(totalBps)} — Downlink`
+        : "Downlink";
+
+    invoke("set_window_title", { title }).catch(() => {
+      // Graceful degradation — command may not be registered in all builds
+      document.title = title;
+    });
+  }, [isTauri, queue]);
+
   // Queue operations
   const refreshQueue = useCallback(async () => {
     if (!isTauri) return;
@@ -427,6 +455,13 @@ export function useDownlink(): UseDownlinkReturn {
       // Calling refreshQueue here was causing unnecessary full-queue reloads on
       // every URL paste. Queue state is kept in sync via real-time backend events.
       return invoke<FetchMetadataResult>("fetch_metadata", { url, options });
+    },
+    []
+  );
+
+  const fastFetchMetadata = useCallback(
+    async (url: string): Promise<FetchMetadataResult | null> => {
+      return invoke<FetchMetadataResult | null>("fast_fetch_metadata", { url });
     },
     []
   );
@@ -623,6 +658,7 @@ export function useDownlink(): UseDownlinkReturn {
     // URL operations
     addUrls,
     fetchMetadata,
+    fastFetchMetadata,
     previewPlaylist,
     expandPlaylist,
     extractUrls,

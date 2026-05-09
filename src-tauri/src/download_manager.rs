@@ -397,6 +397,10 @@ impl DownloadManager {
     }
 
     /// Start a download by ID.
+    ///
+    /// Returns immediately after registering the slot — metadata fetch and actual download
+    /// run inside a spawned task. This allows start_all_downloads / the completion listener
+    /// to fill all concurrent slots without blocking on each download's metadata fetch.
     pub async fn start(&self, id: Uuid) -> Result<()> {
         // Acquire write lock and check concurrency + register atomically
         // This prevents race conditions where multiple downloads start simultaneously
@@ -433,25 +437,19 @@ impl DownloadManager {
             );
         }
 
-        // Helper to remove from active downloads on early exit
-        let cleanup = || async {
-            self.active_downloads.write().await.remove(&id);
-            log::info!("Download {} removed from active (early exit)", id);
-        };
-
-        // Get download info from DB
-        let mut download_info = {
+        // Get download info from DB — needed to verify state and pass to the spawned task
+        let download_info = {
             let mut db = self.db.lock().await;
             match db.get_download(id) {
                 Ok(Some(row)) => row,
                 Ok(None) => {
                     log::error!("Download {} not found in database", id);
-                    cleanup().await;
+                    self.active_downloads.write().await.remove(&id);
                     return Err(anyhow!("Download not found"));
                 }
                 Err(e) => {
                     log::error!("Failed to get download {}: {}", id, e);
-                    cleanup().await;
+                    self.active_downloads.write().await.remove(&id);
                     return Err(anyhow!("Database error: {}", e));
                 }
             }
@@ -466,124 +464,129 @@ impl DownloadManager {
                     id,
                     download_info.status
                 );
-                cleanup().await;
+                self.active_downloads.write().await.remove(&id);
                 return Ok(());
             }
         }
 
-        let yt_dlp_path = self.config.read().await.yt_dlp_path.clone();
-        // If the download doesn't have a title, fetch metadata first
-        if download_info.title.is_none() {
-            log::info!("Download {} has no title, fetching metadata first", id);
-
-            // Update status to Fetching
-            {
-                let mut db = self.db.lock().await;
-                let _ = db.set_status(id, DownloadStatus::Fetching, Some("Fetching metadata…"));
-            }
-
-            // Emit progress event for fetching phase
-            let _ = self
-                .event_tx
-                .send(DownlinkEvent::DownloadProgress {
-                    id,
-                    status: events::DownloadStatus::Fetching,
-                    progress: Progress {
-                        percent: None,
-                        bytes_downloaded: None,
-                        bytes_total: None,
-                        speed_bps: None,
-                        eta_seconds: None,
-                        phase: Some(Phase {
-                            name: "Fetching metadata…".to_string(),
-                            detail: None,
-                        }),
-                    },
-                })
-                .await;
-
-            // Fetch metadata using yt-dlp
-            if let Some(metadata) =
-                fetch_metadata_for_url(&yt_dlp_path, &download_info.source_url).await
-            {
-                log::info!("Fetched metadata for {}: title={:?}", id, metadata.title);
-
-                // Update the database with fetched metadata
-                {
-                    let mut db = self.db.lock().await;
-                    let _ = db.update_metadata(
-                        id,
-                        metadata.title.as_deref(),
-                        metadata.uploader.as_deref(),
-                        metadata.duration_seconds.map(|d| d as i64),
-                        metadata.thumbnail_url.as_deref(),
-                    );
-                }
-
-                // Update local download_info for the progress event
-                download_info.title = metadata.title.clone();
-                download_info.uploader = metadata.uploader.clone();
-                download_info.thumbnail_url = metadata.thumbnail_url.clone();
-                download_info.duration_seconds = metadata.duration_seconds.map(|d| d as i64);
-
-                // Emit MetadataReady event so UI can update the queue display
-                let _ = self
-                    .event_tx
-                    .send(DownlinkEvent::MetadataReady {
-                        id,
-                        info: MediaInfo {
-                            title: metadata.title,
-                            uploader: metadata.uploader,
-                            duration_seconds: metadata.duration_seconds,
-                            thumbnail_url: metadata.thumbnail_url,
-                            webpage_url: Some(download_info.source_url.clone()),
-                        },
-                    })
-                    .await;
-            } else {
-                log::warn!("Failed to fetch metadata for {}, proceeding anyway", id);
-            }
-        }
-
-        // Get the cancel_tx from active_downloads (we already inserted it)
-        let cancel_tx = {
-            let active = self.active_downloads.read().await;
-            active.get(&id).cloned()
-        };
-
-        let cancel_tx = match cancel_tx {
-            Some(tx) => tx,
-            None => {
-                log::error!(
-                    "Download {} not found in active_downloads after registration",
-                    id
-                );
-                return Err(anyhow!("Internal error: download not registered"));
-            }
-        };
-
-        // Update status to Downloading
-        {
-            let mut db = self.db.lock().await;
-            let _ = db.set_status(id, DownloadStatus::Downloading, Some("Starting…"));
-        }
-
-        let _ = self
-            .event_tx
-            .send(DownlinkEvent::DownloadStarted { id })
-            .await;
-
-        // Spawn the download task
+        // Spawn the full download lifecycle (metadata fetch + actual download) as a background
+        // task so that start() returns immediately. This is the key fix: previously the metadata
+        // fetch happened synchronously inside start(), which caused start_all_downloads to fill
+        // concurrent slots one-at-a-time (sequential) instead of all at once (parallel).
         let config = self.config.clone();
         let db = self.db.clone();
         let event_tx = self.event_tx.clone();
         let active_downloads = self.active_downloads.clone();
-        let source_url = download_info.source_url.clone();
-        let preset_id = download_info.preset_id.clone();
-        let output_dir = download_info.output_dir.clone();
         let completion_tx = self.completion_tx.clone();
 
         tokio::spawn(async move {
+            // ── Phase 1: metadata fetch (if title is missing) ──────────────────
+            let mut download_info = download_info;
+            let yt_dlp_path = config.read().await.yt_dlp_path.clone();
+
+            if download_info.title.is_none() {
+                log::info!("Download {} has no title, fetching metadata first", id);
+
+                // Update status to Fetching
+                {
+                    let mut db_guard = db.lock().await;
+                    let _ = db_guard.set_status(id, DownloadStatus::Fetching, Some("Fetching metadata..."));
+                }
+
+                // Emit progress event for fetching phase
+                let _ = event_tx
+                    .send(DownlinkEvent::DownloadProgress {
+                        id,
+                        status: events::DownloadStatus::Fetching,
+                        progress: Progress {
+                            percent: None,
+                            bytes_downloaded: None,
+                            bytes_total: None,
+                            speed_bps: None,
+                            eta_seconds: None,
+                            phase: Some(Phase {
+                                name: "Fetching metadata...".to_string(),
+                                detail: None,
+                            }),
+                        },
+                    })
+                    .await;
+
+                // Fetch metadata using yt-dlp
+                if let Some(metadata) =
+                    fetch_metadata_for_url(&yt_dlp_path, &download_info.source_url).await
+                {
+                    log::info!("Fetched metadata for {}: title={:?}", id, metadata.title);
+
+                    // Update the database with fetched metadata
+                    {
+                        let mut db_guard = db.lock().await;
+                        let _ = db_guard.update_metadata(
+                            id,
+                            metadata.title.as_deref(),
+                            metadata.uploader.as_deref(),
+                            metadata.duration_seconds.map(|d| d as i64),
+                            metadata.thumbnail_url.as_deref(),
+                        );
+                    }
+
+                    // Update local download_info for the progress event
+                    download_info.title = metadata.title.clone();
+                    download_info.uploader = metadata.uploader.clone();
+                    download_info.thumbnail_url = metadata.thumbnail_url.clone();
+                    download_info.duration_seconds = metadata.duration_seconds.map(|d| d as i64);
+
+                    // Emit MetadataReady event so UI can update the queue display
+                    let _ = event_tx
+                        .send(DownlinkEvent::MetadataReady {
+                            id,
+                            info: MediaInfo {
+                                title: metadata.title,
+                                uploader: metadata.uploader,
+                                duration_seconds: metadata.duration_seconds,
+                                thumbnail_url: metadata.thumbnail_url,
+                                webpage_url: Some(download_info.source_url.clone()),
+                            },
+                        })
+                        .await;
+                } else {
+                    log::warn!("Failed to fetch metadata for {}, proceeding anyway", id);
+                }
+            }
+
+            // ── Phase 2: Check cancel, then start actual download ──────────────
+
+            // The download may have been canceled/stopped during the metadata fetch.
+            // If it was removed from active_downloads, abort gracefully.
+            let cancel_tx = {
+                let active = active_downloads.read().await;
+                active.get(&id).cloned()
+            };
+
+            let cancel_tx = match cancel_tx {
+                Some(tx) => tx,
+                None => {
+                    log::info!("Download {} was removed during metadata fetch, aborting", id);
+                    // Still fire completion so the next queued item can start
+                    let _ = completion_tx.send(()).await;
+                    return;
+                }
+            };
+
+            // Update status to Downloading
+            {
+                let mut db_guard = db.lock().await;
+                let _ = db_guard.set_status(id, DownloadStatus::Downloading, Some("Starting..."));
+            }
+
+            let _ = event_tx
+                .send(DownlinkEvent::DownloadStarted { id })
+                .await;
+
+            let source_url = download_info.source_url.clone();
+            let preset_id = download_info.preset_id.clone();
+            let output_dir = download_info.output_dir.clone();
+
             let result = execute_download(
                 id,
                 &source_url,
@@ -612,12 +615,10 @@ impl DownloadManager {
                 }
                 Err(DownloadError::Canceled) => {
                     // Status already set by cancel() - just emit event
-                    // Don't override status in case it was set to something else
                     let _ = event_tx.send(DownlinkEvent::DownloadCanceled { id }).await;
                 }
                 Err(DownloadError::Stopped) => {
                     // Status already set by stop() - just emit event
-                    // Don't override status in case it was set to something else
                     let _ = event_tx.send(DownlinkEvent::DownloadStopped { id }).await;
                 }
                 Err(DownloadError::Failed {

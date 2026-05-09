@@ -191,6 +191,33 @@ select:disabled {
     animation: scale-in 0.2s var(--ease-spring) both;
 }
 
+/* ─── Scale-out animation (Radix close) ──────────────────── */
+@keyframes scale-out {
+    from {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+
+.animate-scale-out {
+    animation: scale-out 0.1s var(--ease-smooth) both;
+}
+
+/* ─── Progress shimmer (indeterminate) fix ───────────────── */
+.progress-shimmer {
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(59, 130, 246, 0.35) 50%,
+        transparent 100%);
+    animation: shimmer 1.8s ease-in-out infinite;
+    border-radius: inherit;
+}
+
 /* ─── Status pill pulse ──────────────────────────────────── */
 @keyframes status-pulse {
 

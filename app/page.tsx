@@ -10,6 +10,8 @@ import { PreviewPanel } from "./components/PreviewPanel";
 import { ActionBar } from "./components/ActionBar";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { Footer } from "./components/Footer";
+import { ResizableDivider } from "./components/ResizableDivider";
+import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
 import type { UserSettings, FetchMetadataResult, UrlPreviewItem, VideoQualityOption } from "./types";
 import { normalizeBareUrls, expandUrlPattern } from "./types";
@@ -40,10 +42,27 @@ export default function Home() {
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Queue panel width — persisted in localStorage
+  const [queueWidth, setQueueWidth] = useState(() => {
+    if (typeof window === "undefined") return 300;
+    return parseInt(localStorage.getItem("downlink:queue-width") ?? "300", 10);
+  });
+
+  const handleQueueWidthChange = useCallback((w: number) => {
+    setQueueWidth(w);
+    localStorage.setItem("downlink:queue-width", String(w));
+  }, []);
+
+  const openSettings = useCallback((tab?: string) => {
+    setSettingsInitialTab(tab);
+    setSettingsOpen(true);
+  }, []);
 
   // Playlist dialog state
   const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
@@ -208,9 +227,13 @@ export default function Home() {
     }
   }, []);
 
-  // Stable ref to fetchMetadata so the effect dependency doesn't change every render
+  // Stable refs so effect deps don't change every render
   const fetchMetadataRef = useRef(downlink.fetchMetadata);
-  useEffect(() => { fetchMetadataRef.current = downlink.fetchMetadata; });
+  const fastFetchMetadataRef = useRef(downlink.fastFetchMetadata);
+  useEffect(() => {
+    fetchMetadataRef.current = downlink.fetchMetadata;
+    fastFetchMetadataRef.current = downlink.fastFetchMetadata;
+  });
 
   // Auto-fetch preview for ALL extracted URLs in parallel.
   // Rules:
@@ -242,11 +265,14 @@ export default function Home() {
       });
 
       // ─── Per-URL fetch logic ──────────────────────────────────────────────
-      // Handles oEmbed fast-path + yt-dlp fallback + background quality fetch.
+      // Three-phase strategy:
+      //   Phase 1 — oEmbed (ms, browser fetch):    YouTube/Vimeo/TikTok etc.
+      //   Phase 2 — fast_fetch_metadata (~2-3s):   yt-dlp --print, no formats
+      //   Phase 3 — fetch_metadata background:      full --dump-json for qualities
       const fetchOneUrl = async (url: string): Promise<void> => {
         if (cancelled) return;
         try {
-          // 1️⃣ oEmbed fast-path (YouTube, Vimeo, TikTok, etc.) — instant, no subprocess
+          // ── Phase 1: oEmbed fast-path ─────────────────────────────────────
           const oembedResult = await tryOEmbedPreview(url);
 
           if (oembedResult) {
@@ -258,8 +284,7 @@ export default function Home() {
               });
               qualitiesFetchingRef.current.add(url);
             }
-
-            // Background yt-dlp call for quality options — does NOT block the preview
+            // Background full fetch for quality options
             fetchMetadataRef.current(url, { preset_id: presetId, output_dir: destination })
               .then((ytResult) => {
                 if (!cancelled) {
@@ -290,15 +315,59 @@ export default function Home() {
             return;
           }
 
-          // 2️⃣ Unknown site — yt-dlp via backend (slower, subprocess-based).
-          // 20 s budget: streaming sites typically make 3-5 HTTP round-trips
-          // (page load → CDN lookup → embed API → manifest), each taking 2-5 s.
+          // ── Phase 2: fast yt-dlp --print (~2-3s, no format enumeration) ───
+          // Shows the card almost immediately without waiting for the slow full JSON dump.
+          const fastResult = await fastFetchMetadataRef.current(url);
+
+          if (fastResult && !cancelled) {
+            setUrlPreviews((prev) => {
+              const updated = new Map(prev);
+              updated.set(url, { url, loading: false, data: fastResult, error: null, presetId });
+              return updated;
+            });
+            qualitiesFetchingRef.current.add(url);
+
+            // ── Phase 3: background full fetch for quality options ────────────
+            fetchMetadataRef.current(url, { preset_id: presetId, output_dir: destination })
+              .then((ytResult) => {
+                if (!cancelled) {
+                  qualitiesFetchingRef.current.delete(url);
+                  setUrlPreviews((prev) => {
+                    const updated = new Map(prev);
+                    const existing = prev.get(url);
+                    if (existing?.data) {
+                      updated.set(url, {
+                        ...existing,
+                        data: {
+                          ...existing.data,
+                          title: ytResult.title ?? existing.data.title,
+                          uploader: ytResult.uploader ?? existing.data.uploader,
+                          thumbnail_url: ytResult.thumbnail_url ?? existing.data.thumbnail_url,
+                          duration_seconds: ytResult.duration_seconds ?? existing.data.duration_seconds,
+                          available_qualities: ytResult.available_qualities ?? [],
+                        },
+                      });
+                    }
+                    return updated;
+                  });
+                }
+              })
+              .catch(() => {
+                if (!cancelled) {
+                  qualitiesFetchingRef.current.delete(url);
+                  setUrlPreviews((prev) => new Map(prev));
+                }
+              });
+            return;
+          }
+
+          // ── Fallback: full fetch (fast path returned null — unsupported extractor) ──
           const result = await Promise.race([
             fetchMetadataRef.current(url, { preset_id: presetId, output_dir: destination }),
             new Promise<never>((_, reject) =>
               setTimeout(
                 () => reject(new Error("Preview timed out — the site may be slow or unsupported.")),
-                20_000
+                25_000
               )
             ),
           ]);
@@ -362,7 +431,7 @@ export default function Home() {
       );
     };
 
-    const timeout = setTimeout(fetchAll, 500);
+    const timeout = setTimeout(fetchAll, 300);
     return () => {
       cancelled = true;
       clearTimeout(timeout);
@@ -462,8 +531,17 @@ export default function Home() {
       fetchedUrlsRef.current.clear();
       qualitiesFetchingRef.current.clear();
       setSelectedQualityPerUrl(new Map());
+
+      // Success toast
+      const count = extractedUrls.length;
+      toast.success(
+        count === 1
+          ? "Added to queue"
+          : `${count} URLs added to queue`
+      );
     } catch (e) {
       console.error("Failed to add download:", e);
+      toast.error("Failed to add download — check console for details");
     } finally {
       setIsSubmitting(false);
     }
@@ -636,7 +714,7 @@ export default function Home() {
         }}
         onPaste={handlePaste}
         onSubmit={handleDownload}
-        onSettingsClick={() => setSettingsOpen(true)}
+      onSettingsClick={() => openSettings()}
         isLoading={previewLoading}
         inputRef={inputRef}
         urlCount={extractedUrls.length}
@@ -692,6 +770,13 @@ export default function Home() {
         </div>
 
         {/* Right side - Download queue */}
+        <ResizableDivider
+          width={queueWidth}
+          onWidthChange={handleQueueWidthChange}
+          minWidth={260}
+          maxWidth={480}
+        />
+        <div style={{ width: queueWidth, minWidth: queueWidth, maxWidth: queueWidth }} className="flex-shrink-0">
         <DownloadQueue
           queue={downlink.queue}
           history={downlink.history}
@@ -699,12 +784,14 @@ export default function Home() {
           onShowHistoryChange={setShowHistory}
           onStop={downlink.stopDownload}
           onCancel={downlink.cancelDownload}
+          onRemove={downlink.removeDownload}
           onRetry={downlink.retryDownload}
           onOpen={downlink.openFile}
           onOpenFolder={downlink.openFolder}
           onClearQueue={downlink.clearQueue}
           onClearHistory={downlink.clearHistory}
         />
+        </div>
       </div>
 
       {/* Footer */}
@@ -712,6 +799,7 @@ export default function Home() {
         appVersion={downlink.appVersion ?? undefined}
         ytDlpVersion={downlink.ytDlpVersion}
         ffmpegVersion={downlink.ffmpegVersion}
+        onOpenSettings={openSettings}
       />
 
       {/* Settings Modal */}
@@ -724,6 +812,7 @@ export default function Home() {
         checkAppUpdate={downlink.checkAppUpdate}
         installAppUpdate={downlink.installAppUpdate}
         restartApp={downlink.restartApp}
+        initialTab={settingsInitialTab as Parameters<typeof SettingsModal>[0]["initialTab"]}
       />
 
       {/* Playlist Dialog */}

@@ -25,6 +25,8 @@ interface SettingsModalProps {
   checkAppUpdate: () => Promise<AppUpdateInfo>;
   installAppUpdate: () => Promise<void>;
   restartApp: () => Promise<void>;
+  /** Open directly to a specific tab */
+  initialTab?: TabId;
 }
 
 type TabId = "general" | "formats" | "sponsorblock" | "subtitles" | "updates" | "network";
@@ -56,19 +58,22 @@ export function SettingsModal({
   checkAppUpdate,
   installAppUpdate,
   restartApp,
+  initialTab,
 }: SettingsModalProps) {
+  // Persist tab across opens — don't reset on every open
   const [activeTab, setActiveTab] = useState<TabId>("general");
   const [localSettings, setLocalSettings] = useState<UserSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize local settings when modal opens
+  // Initialize local settings when modal opens; jump to initialTab if provided
   useEffect(() => {
     if (isOpen && settings) {
       setLocalSettings(JSON.parse(JSON.stringify(settings)));
       setError(null);
+      if (initialTab) setActiveTab(initialTab);
     }
-  }, [isOpen, settings]);
+  }, [isOpen, settings, initialTab]);
 
   const handleSave = useCallback(async () => {
     if (!localSettings) return;

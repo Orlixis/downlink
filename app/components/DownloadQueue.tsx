@@ -12,6 +12,7 @@ interface DownloadQueueProps {
   onShowHistoryChange: (value: boolean) => void;
   onStop: (id: string) => void;
   onCancel: (id: string) => void;
+  onRemove: (id: string) => void;
   onRetry: (id: string) => void;
   onOpen: (path: string) => void;
   onOpenFolder: (path: string) => void;
@@ -26,6 +27,7 @@ export function DownloadQueue({
   onShowHistoryChange,
   onStop,
   onCancel,
+  onRemove,
   onRetry,
   onOpen,
   onOpenFolder,
@@ -50,7 +52,7 @@ export function DownloadQueue({
   const isEmpty = items.length === 0;
 
   return (
-    <div className="flex w-[300px] flex-col border-l border-zinc-800/80 bg-zinc-950">
+    <div className="flex w-full flex-col border-l border-zinc-800/80 bg-zinc-950 h-full">
       {/* ── Header / Tabs ──────────────────────────────── */}
       <div className="flex border-b border-zinc-800/80 px-1 pt-1">
         <button
@@ -155,6 +157,7 @@ export function DownloadQueue({
               item={item}
               onStop={onStop}
               onCancel={onCancel}
+              onRemove={onRemove}
               onRetry={onRetry}
               onOpen={onOpen}
               onOpenFolder={onOpenFolder}
