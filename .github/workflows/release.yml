@@ -444,10 +444,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Copy the freshly-generated latest.json into the repo root
-          cp latest.json $GITHUB_WORKSPACE/latest.json
-
-          cd $GITHUB_WORKSPACE
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
