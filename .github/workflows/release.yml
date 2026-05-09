@@ -325,18 +325,32 @@ jobs:
 
           echo "$ASSETS" > release_assets.json
 
-          # Extract download URLs for each platform
-          MACOS_ARM64_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("aarch64") and contains(".app.tar.gz") and (contains(".sig") | not)) | .browser_download_url' | head -1)
-          MACOS_ARM64_SIG_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("aarch64") and contains(".app.tar.gz.sig")) | .browser_download_url' | head -1)
+          VERSION="${{ steps.get_version.outputs.version }}"
 
-          MACOS_X64_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("x64") and contains(".app.tar.gz") and (contains(".sig") | not)) | .browser_download_url' | head -1)
-          MACOS_X64_SIG_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("x64") and contains(".app.tar.gz.sig")) | .browser_download_url' | head -1)
+          # Filter by version string first to avoid picking up stale old-version assets
+          # from prior failed/partial builds that may coexist in the same release.
+          MACOS_ARM64_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains("aarch64") and contains(".app.tar.gz") and (contains(".sig") | not) and contains($v)) | .browser_download_url' | head -1)
+          MACOS_ARM64_SIG_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains("aarch64") and contains(".app.tar.gz.sig") and contains($v)) | .browser_download_url' | head -1)
 
-          WINDOWS_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("setup.exe") and (contains(".sig") | not)) | .browser_download_url' | head -1)
-          WINDOWS_SIG_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("setup.exe.sig")) | .browser_download_url' | head -1)
+          # macOS tar.gz filenames don't embed the version — fall back without version filter
+          if [ -z "$MACOS_ARM64_URL" ] || [ "$MACOS_ARM64_URL" = "null" ]; then
+            MACOS_ARM64_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("aarch64") and contains(".app.tar.gz") and (contains(".sig") | not)) | .browser_download_url' | head -1)
+            MACOS_ARM64_SIG_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("aarch64") and contains(".app.tar.gz.sig")) | .browser_download_url' | head -1)
+          fi
 
-          LINUX_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains(".AppImage") and (contains(".sig") | not)) | .browser_download_url' | head -1)
-          LINUX_SIG_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains(".AppImage.sig")) | .browser_download_url' | head -1)
+          MACOS_X64_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains("x64") and contains(".app.tar.gz") and (contains(".sig") | not) and contains($v)) | .browser_download_url' | head -1)
+          MACOS_X64_SIG_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains("x64") and contains(".app.tar.gz.sig") and contains($v)) | .browser_download_url' | head -1)
+
+          if [ -z "$MACOS_X64_URL" ] || [ "$MACOS_X64_URL" = "null" ]; then
+            MACOS_X64_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("x64") and contains(".app.tar.gz") and (contains(".sig") | not)) | .browser_download_url' | head -1)
+            MACOS_X64_SIG_URL=$(echo "$ASSETS" | jq -r '.assets[] | select(.name | contains("x64") and contains(".app.tar.gz.sig")) | .browser_download_url' | head -1)
+          fi
+
+          WINDOWS_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains("setup.exe") and (contains(".sig") | not) and contains($v)) | .browser_download_url' | head -1)
+          WINDOWS_SIG_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains("setup.exe.sig") and contains($v)) | .browser_download_url' | head -1)
+
+          LINUX_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains(".AppImage") and (contains(".sig") | not) and contains($v)) | .browser_download_url' | head -1)
+          LINUX_SIG_URL=$(echo "$ASSETS" | jq -r --arg v "$VERSION" '.assets[] | select(.name | contains(".AppImage.sig") and contains($v)) | .browser_download_url' | head -1)
 
           echo "macos_arm64_url=$MACOS_ARM64_URL" >> $GITHUB_OUTPUT
           echo "macos_arm64_sig_url=$MACOS_ARM64_SIG_URL" >> $GITHUB_OUTPUT

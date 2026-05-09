@@ -800,9 +800,21 @@
             // Find download assets
             const assets = release.assets || [];
 
-            // Helper to find asset by pattern
+            // Helper to find asset by pattern — prefers assets whose filename
+            // contains the release version to avoid picking up stale old-version
+            // files that may coexist in the same release from earlier build attempts.
+            const releaseVersion = release.tag_name ? release.tag_name.replace(/^v/, '') : '';
             const findAsset = (patterns) => {
                 for (const pattern of patterns) {
+                    // 1st pass: prefer assets that match pattern AND current version
+                    if (releaseVersion) {
+                        const versioned = assets.find(a =>
+                            a.name.toLowerCase().includes(pattern.toLowerCase()) &&
+                            a.name.includes(releaseVersion)
+                        );
+                        if (versioned) return versioned.browser_download_url;
+                    }
+                    // 2nd pass: any asset matching the pattern (fallback for files without version in name)
                     const asset = assets.find(a => a.name.toLowerCase().includes(pattern.toLowerCase()));
                     if (asset) return asset.browser_download_url;
                 }
