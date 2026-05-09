@@ -470,7 +470,10 @@ jobs:
             echo "latest.json unchanged, skipping commit"
           else
             git commit -m "chore: update latest.json to ${{ steps.get_version.outputs.tag }} [skip ci]"
-            # Use full ref to avoid ambiguity in detached HEAD mode
+            # Remote main may have moved forward while builds were running.
+            # Fetch + rebase our single commit on top before pushing.
+            git fetch origin refs/heads/main
+            git rebase FETCH_HEAD
             git push origin HEAD:refs/heads/main
             echo "latest.json committed to repo"
           fi
