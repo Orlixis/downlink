@@ -282,7 +282,7 @@
 
         .download-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 20px;
         }
 
@@ -386,7 +386,7 @@
 
         .features-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 24px;
         }
 
@@ -898,6 +898,7 @@
             const linuxAppImageLink = document.getElementById('linux-appimage-link');
             const linuxDebLink = document.getElementById('linux-deb-link');
             const linuxRpmLink = document.getElementById('linux-rpm-link');
+            const androidCard = document.getElementById('android-card');
 
             if (linuxDownloadBtn && linuxAppImageUrl) linuxDownloadBtn.href = linuxAppImageUrl;
             if (linuxAppImageLink && linuxAppImageUrl) linuxAppImageLink.href = linuxAppImageUrl;
@@ -972,7 +973,8 @@
 
         if (platform.includes('mac')) {
             macosCard.classList.add('recommended');
-        } else if (platform.includes('win')) {
+        } else if (platform.includes('android')) {
+            androidCard.classList.add('recommended');        } else if (platform.includes('win')) {
             windowsCard.classList.add('recommended');
         } else if (platform.includes('linux')) {
             linuxCard.classList.add('recommended');
