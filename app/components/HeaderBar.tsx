@@ -60,8 +60,11 @@ export function HeaderBar({
   );
 
   return (
-    <div className="flex flex-col border-b border-zinc-800/80 bg-transparent">
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
+    <div 
+      className="flex flex-col border-b border-zinc-800/80 bg-transparent"
+      data-tauri-drag-region
+    >
+      <div className="flex items-start gap-2.5 pr-3 pl-[80px] py-3" data-tauri-drag-region>
         {/* Logo */}
         <div className="flex-shrink-0 pt-0.5">
           <Image
