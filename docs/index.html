@@ -768,7 +768,7 @@
         // GitHub repository info
         const GITHUB_OWNER = 'Orlixis';
         const GITHUB_REPO = 'downlink';
-        const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+        const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`;
 
         // Fetch latest release info from GitHub
         async function fetchLatestRelease() {
@@ -778,7 +778,10 @@
                     console.warn('Failed to fetch release info:', response.status);
                     return null;
                 }
-                return await response.json();
+                const releases = await response.json();
+                // Find the first release that is not a draft and not a prerelease
+                const latest = releases.find(r => !r.draft && !r.prerelease);
+                return latest || null;
             } catch (error) {
                 console.warn('Error fetching release:', error);
                 return null;
