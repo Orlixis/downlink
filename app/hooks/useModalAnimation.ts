@@ -81,19 +81,27 @@ export function useModalAnimation({
       // Fade in backdrop
       tl.to(backdropRef.current, { opacity: 1, duration: 0.3 }, 0);
 
-      // Arc Throw to center
-      // X moves linearly (or slightly eased)
+      // Arc Throw to center with a realistic floor bounce
+      const floorY = (window.innerHeight / 2) - 20;
+
+      // X moves linearly (smooth curve)
       tl.to(modalRef.current, {
         x: 0,
-        duration: 0.6,
-        ease: "power2.out"
+        duration: 0.7,
+        ease: "power1.out"
       }, 0)
-      // Y overshoots (bounces down into the center)
+      // Y first falls DOWN from the icon to the floor (gravity)
+      .to(modalRef.current, {
+        y: floorY,
+        duration: 0.45,
+        ease: "power2.in" 
+      }, 0)
+      // Y then bounces UP from the floor into the center of the screen
       .to(modalRef.current, {
         y: 0,
-        duration: 0.6,
-        ease: "bounce.out" // Bounces slightly as it "lands" in the center
-      }, 0)
+        duration: 0.25,
+        ease: "back.out(0.8)" // Gentle overshoot as it hangs in mid-air
+      }, ">")
       
       // After hitting the center, morph into the large rectangular modal
       .to(modalRef.current, {
@@ -146,25 +154,28 @@ export function useModalAnimation({
         ease: "power2.inOut"
       })
       
-      // 3. Throw the ball to the target icon
-      // X moves smoothly
-      .to(modalRef.current, {
+      // 3. Throw the ball to the target icon with a realistic floor bounce
+      // Calculate the 'floor' (bottom of the window relative to the center)
+      const floorY = (window.innerHeight / 2) - 20;
+
+      // X moves smoothly across the whole trajectory
+      tl.to(modalRef.current, {
         x: targetX,
-        duration: 0.6,
-        ease: "power2.inOut"
-      })
-      // Y shoots UP high into the air first, then arcs down into the icon
-      // Using a custom sequence to simulate jumping up and then falling into the icon
-      .to(modalRef.current, {
-        y: targetY - 100, // Shoot up 100px higher than the icon
-        duration: 0.3,
+        duration: 0.7,
         ease: "power1.out"
-      }, "<") // Start at the same time as X
+      })
+      // Y first falls DOWN to the floor (accelerating with gravity)
       .to(modalRef.current, {
-        y: targetY, // Fall down into the icon
-        duration: 0.3,
-        ease: "bounce.out" // Bounce as it hits the icon
-      }, ">"); // Run immediately after reaching the peak
+        y: floorY, 
+        duration: 0.25,
+        ease: "power2.in"
+      }, "<") 
+      // Then reflects off the floor and arcs UP into the icon
+      .to(modalRef.current, {
+        y: targetY, 
+        duration: 0.45,
+        ease: "back.out(1.0)" // Slight catch as it lands in the icon
+      }, ">"); // Run immediately after hitting the floor
 
       // Fade backdrop out near the end of the throw
       tl.to(backdropRef.current, { opacity: 0, duration: 0.3 }, "-=0.3");

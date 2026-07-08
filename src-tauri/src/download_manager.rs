@@ -1001,7 +1001,9 @@ async fn execute_download(
 
     let mut stderr_lines: Vec<String> = Vec::new();
     let mut final_path: Option<String> = None;
-    let mut last_percent: f64 = 0.0;
+    let mut last_raw_percent: f64 = 0.0;
+    let mut reported_percent: f64 = 0.0;
+    let mut streams_completed: u8 = 0;
 
     // Progress regex for our custom template: [downlink] 50.5% 1.5MiB/s 00:30 100MiB
     let progress_re = Regex::new(r"\[downlink\]\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)").ok();
@@ -1077,12 +1079,28 @@ async fn execute_download(
                         }
 
                         // Send progress event if we parsed something
-                        if let Some(p) = parsed {
+                        if let Some(mut p) = parsed {
+                            // Detect if yt-dlp started downloading a second stream (e.g. audio after video)
+                            let current_raw_percent = p.percent.unwrap_or(0.0);
+                            
+                            if current_raw_percent < last_raw_percent - 50.0 {
+                                streams_completed += 1;
+                            }
+                            last_raw_percent = current_raw_percent;
+                            
+                            // Map progress assuming 2 streams total (Video -> 0-50%, Audio -> 50-100%)
+                            let adjusted_percent = if streams_completed == 0 {
+                                current_raw_percent / 2.0
+                            } else {
+                                50.0 + (current_raw_percent / 2.0).min(50.0)
+                            };
+                            
+                            p.percent = Some(adjusted_percent);
+
                             // Only send if percent changed significantly (avoid flooding)
-                            let current_percent = p.percent.unwrap_or(0.0);
-                            if (current_percent - last_percent).abs() >= 0.5 || current_percent >= 99.9 {
-                                last_percent = current_percent;
-                                log::info!("Progress: {}%", current_percent);
+                            if (adjusted_percent - reported_percent).abs() >= 0.5 || adjusted_percent >= 99.9 {
+                                reported_percent = adjusted_percent;
+                                log::info!("Progress: {}% (Raw: {}%)", adjusted_percent, current_raw_percent);
                                 let _ = event_tx.send(DownlinkEvent::DownloadProgress {
                                     id,
                                     status: events::DownloadStatus::Downloading,

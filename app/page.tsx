@@ -86,6 +86,7 @@ export default function Home() {
     uploader?: string;
   }>>([]);
   const [isLoadingPlaylistVideos, setIsLoadingPlaylistVideos] = useState(false);
+  const [isAnimatingOut, setIsAnimatingOut] = useState(false);
 
   // Preview state
   const [urlPreviews, setUrlPreviews] = useState<Map<string, UrlPreview>>(new Map());
@@ -543,6 +544,16 @@ export default function Home() {
     const hasSingleMeta = allPreviews.length === 1 && rangeGroups.length === 0;
 
     setIsSubmitting(true);
+    setIsAnimatingOut(true);
+
+    // Total animation = morph (0.3s) + drop (0.25s) + arc (0.5s) = 1.05s
+    // Stagger adds 0.1s per additional item. We add 50ms buffer.
+    const staggerMs = Math.max(0, extractedUrls.length - 1) * 100;
+    const animationMs = 1100 + staggerMs;
+
+    // Wait for the exit animation to finish before adding to backend
+    await new Promise((resolve) => setTimeout(resolve, animationMs));
+
     try {
       if (hasSingleMeta) {
         // Single URL — pass metadata to skip re-fetch, use per-URL quality selection
@@ -604,11 +615,14 @@ export default function Home() {
         }
       }
 
+      // Clear state immediately now that backend call is complete
       setUrlInput("");
       setUrlPreviews(new Map());
       fetchedUrlsRef.current.clear();
       qualitiesFetchingRef.current.clear();
       setSelectedQualityPerUrl(new Map());
+      setIsAnimatingOut(false);
+      setIsSubmitting(false);
 
       // Success toast
       const count = extractedUrls.length;
@@ -620,7 +634,6 @@ export default function Home() {
     } catch (e) {
       console.error("Failed to add download:", e);
       toast.error("Failed to add download — check console for details");
-    } finally {
       setIsSubmitting(false);
     }
   }, [
@@ -641,7 +654,12 @@ export default function Home() {
     if (!playlistDialogData) return;
 
     setIsSubmitting(true);
+    setIsAnimatingOut(true);
     const { url, metadata } = playlistDialogData;
+
+    // Wait for the exit animation to finish before adding to backend
+    // Playlists only have 1 preview card, so no stagger delay is needed.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
 
     try {
       if (downloadPlaylist) {
@@ -695,9 +713,13 @@ export default function Home() {
 
       setUrlInput("");
       setUrlPreviews(new Map());
+      fetchedUrlsRef.current.clear();
+      qualitiesFetchingRef.current.clear();
+      setSelectedQualityPerUrl(new Map());
     } catch (e) {
       console.error("Failed to handle playlist:", e);
     } finally {
+      setIsAnimatingOut(false);
       setIsSubmitting(false);
       setPlaylistDialogOpen(false);
       setPlaylistDialogData(null);
@@ -820,17 +842,18 @@ export default function Home() {
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className={`flex flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-hidden"}`}>
         {/* Left side - Preview or Empty state */}
         <div className="flex-1 flex flex-col border-r border-zinc-800">
           {/* Preview area — scrollable so multi-URL list can grow */}
-          <div className="flex-1 overflow-y-auto">
+          <div className={`flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-y-auto"}`}>
             <div className="flex min-h-full items-center justify-center p-6">
               <PreviewPanel
                 previewData={previewData}
                 previewLoading={previewLoading}
                 previewError={previewError}
                 isDragging={isDragging}
+                isExiting={isAnimatingOut}
                 onClearPreview={handleClearPreview}
                 allPreviews={allPreviews}
                 rangeGroups={rangeGroups}
@@ -852,20 +875,22 @@ export default function Home() {
           </div>
 
           {/* Action bar — always visible so presets are always accessible */}
-          <ActionBar
-            presetId={presetId}
-            onPresetChange={setPresetId}
-            presets={PRESETS}
-            subtitlesEnabled={subtitlesEnabled}
-            onSubtitlesToggle={() => setSubtitlesEnabled(!subtitlesEnabled)}
-            sponsorBlockEnabled={sponsorBlockEnabled}
-            onSponsorBlockToggle={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
-            onDownload={handleDownload}
-            isSubmitting={isSubmitting}
-            isPlaylist={previewData?.is_playlist ?? false}
-            disabled={!urlInput.trim()}
-            previewLoading={previewLoading}
-          />
+          <div id="action-bar-container">
+            <ActionBar
+              presetId={presetId}
+              onPresetChange={setPresetId}
+              presets={PRESETS}
+              subtitlesEnabled={subtitlesEnabled}
+              onSubtitlesToggle={() => setSubtitlesEnabled(!subtitlesEnabled)}
+              sponsorBlockEnabled={sponsorBlockEnabled}
+              onSponsorBlockToggle={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
+              onDownload={handleDownload}
+              isSubmitting={isSubmitting}
+              isPlaylist={previewData?.is_playlist ?? false}
+              disabled={!urlInput.trim()}
+              previewLoading={previewLoading}
+            />
+          </div>
         </div>
 
         {/* Right side - Download queue */}
@@ -875,7 +900,7 @@ export default function Home() {
           minWidth={260}
           maxWidth={480}
         />
-        <div style={{ width: queueWidth, minWidth: queueWidth, maxWidth: queueWidth }} className="flex-shrink-0">
+        <div id="download-queue-container" style={{ width: queueWidth, minWidth: queueWidth, maxWidth: queueWidth }} className="flex-shrink-0">
         <DownloadQueue
           queue={downlink.queue}
           history={downlink.history}
