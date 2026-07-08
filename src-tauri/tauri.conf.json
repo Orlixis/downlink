@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Downlink",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "identifier": "com.downlink.downlink",
   "build": {
     "frontendDist": "../out",
@@ -19,9 +19,11 @@
         "minHeight": 500,
         "resizable": true,
         "fullscreen": false,
-        "center": true
+        "center": true,
+        "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }
