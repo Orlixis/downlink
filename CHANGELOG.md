@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.22](https://github.com/Orlixis/downlink/compare/v0.1.21...v0.1.22) (2026-07-08)
+
+
+### Features
+
+* implement animated morphing transitions for download previews using GSAP ([4744918](https://github.com/Orlixis/downlink/commit/4744918ffd6d05746bfb5f57a8ab878492724292))
+* implement multi-stream download progress tracking and GSAP-based entry/exit animations for preview panels. ([074e20d](https://github.com/Orlixis/downlink/commit/074e20d73fc392a5e8637f3ca6fa9a08f5c20d7a))
+* implement window drag region and hide native title bar for custom UI styling ([d97c202](https://github.com/Orlixis/downlink/commit/d97c202e6094d4d08268acaf05e815db470ae96e))
+
 ### [0.1.21](https://github.com/Orlixis/downlink/compare/v0.1.19...v0.1.21) (2026-07-08)
 
 
