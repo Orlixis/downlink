@@ -1,6 +1,6 @@
 {
   "name": "downlink",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -24,6 +24,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-clipboard-manager": "~2",
+    "@tauri-apps/plugin-notification": "~2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.9.0",
     "gsap": "^3.15.0",
