@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.20](https://github.com/Orlixis/downlink/compare/v0.1.19...v0.1.20) (2026-07-08)
+
+
+### Features
+
+* implement interactive update modal with manual trigger, download progress, and restart functionality ([0968c74](https://github.com/Orlixis/downlink/commit/0968c7417061bc4acd95694404658cba55ac6800))
+
 ### [0.1.19](https://github.com/Orlixis/downlink/compare/v0.1.18...v0.1.19) (2026-07-08)
 
 
