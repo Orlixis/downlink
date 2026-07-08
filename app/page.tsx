@@ -12,6 +12,7 @@ import { DownloadQueue } from "./components/DownloadQueue";
 import { Footer } from "./components/Footer";
 import { ResizableDivider } from "./components/ResizableDivider";
 import { ClipboardBanner } from "./components/ClipboardBanner";
+import { UpdateModal } from "./components/UpdateModal";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
 import type { UserSettings, FetchMetadataResult, UrlPreviewItem, VideoQualityOption } from "./types";
@@ -43,6 +44,7 @@ export default function Home() {
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -160,6 +162,13 @@ export default function Home() {
     allPreviews.length === 1 && rangeGroups.length === 0 ? allPreviews[0].error : null;
   // Spinner shows while ANY non-range URL is still loading
   const previewLoading = allPreviews.some((p) => p.loading);
+
+  // Auto-open update modal when download finishes
+  useEffect(() => {
+    if (downlink.updateAvailable.readyToInstall) {
+      setIsUpdateModalOpen(true);
+    }
+  }, [downlink.updateAvailable.readyToInstall]);
 
   // Handle splash screen completion
   const handleSplashComplete = useCallback(() => {
@@ -802,10 +811,12 @@ export default function Home() {
         }}
         onPaste={handlePaste}
         onSubmit={handleDownload}
-      onSettingsClick={() => openSettings()}
+        onSettingsClick={() => openSettings()}
         isLoading={previewLoading}
         inputRef={inputRef}
         urlCount={extractedUrls.length}
+        updateState={downlink.updateAvailable}
+        onUpdateClick={() => setIsUpdateModalOpen(true)}
       />
 
       {/* Main content area */}
@@ -899,6 +910,15 @@ export default function Home() {
         installAppUpdate={downlink.installAppUpdate}
         restartApp={downlink.restartApp}
         initialTab={settingsInitialTab as Parameters<typeof SettingsModal>[0]["initialTab"]}
+      />
+
+      {/* Update Modal */}
+      <UpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        updateState={downlink.updateAvailable}
+        installAppUpdate={downlink.installAppUpdate}
+        restartApp={downlink.restartApp}
       />
 
       {/* Playlist Dialog */}

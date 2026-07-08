@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import {
   X,
@@ -13,6 +13,7 @@ import {
   Download,
   Video,
 } from "lucide-react";
+import { useModalAnimation } from "../hooks/useModalAnimation";
 
 interface PlaylistVideo {
   id: string;
@@ -63,6 +64,19 @@ export function PlaylistDialog({
   const [viewMode, setViewMode] = useState<ViewMode>("choice");
   const [selectedVideos, setSelectedVideos] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(true);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const { renderState } = useModalAnimation({
+    isOpen,
+    onClose,
+    targetId: "download-button",
+    modalRef,
+    backdropRef,
+    contentRef,
+  });
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -120,14 +134,25 @@ export function PlaylistDialog({
     }
   }, [selectedVideos, playlistVideos.length, onConfirm]);
 
-  if (!isOpen) return null;
+  if (!renderState) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/70 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="border-b border-zinc-800 px-6 py-4 flex-shrink-0">
-          <div className="flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div 
+        ref={backdropRef}
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Modal */}
+      <div 
+        ref={modalRef}
+        className="relative z-10 w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70 shadow-2xl backdrop-blur-xl flex flex-col max-h-[85vh]"
+      >
+        <div ref={contentRef} className="flex h-full flex-col">
+          {/* Header */}
+          <div className="border-b border-zinc-800 px-6 py-4 flex-shrink-0">
+            <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               {/* Playlist thumbnail */}
               <div className="relative h-16 w-28 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-800">
@@ -398,6 +423,7 @@ export function PlaylistDialog({
             </p>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

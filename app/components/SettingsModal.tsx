@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   X,
   Settings,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { UserSettings, AppUpdateInfo } from "../types";
 import { AppUpdater } from "./AppUpdater";
+import { useModalAnimation } from "../hooks/useModalAnimation";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -65,6 +66,19 @@ export function SettingsModal({
   const [localSettings, setLocalSettings] = useState<UserSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const { renderState } = useModalAnimation({
+    isOpen,
+    onClose,
+    targetId: "settings-button",
+    modalRef,
+    backdropRef,
+    contentRef,
+  });
 
   // Initialize local settings when modal opens; jump to initialTab if provided
   useEffect(() => {
@@ -160,27 +174,37 @@ export function SettingsModal({
     });
   }, []);
 
-  if (!isOpen) return null;
+  if (!renderState) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white/70 backdrop-blur-xl shadow-xl dark:border-zinc-800 dark:bg-zinc-900/90">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-          <h2 className="text-lg font-semibold">Settings</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div 
+        ref={backdropRef}
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div 
+        ref={modalRef}
+        className="relative z-10 flex flex-col max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl border border-zinc-200 bg-white/70 shadow-xl backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/90"
+      >
+        <div ref={contentRef} className="flex flex-1 flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+            <h2 className="text-lg font-semibold">Settings</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
         {/* Content */}
-        <div className="flex min-h-[400px]">
+        <div className="flex flex-1 overflow-hidden min-h-[400px]">
           {/* Sidebar */}
-          <div className="w-48 shrink-0 border-r border-zinc-200 p-4 dark:border-zinc-800">
+          <div className="w-48 shrink-0 overflow-y-auto border-r border-zinc-200 p-4 dark:border-zinc-800 custom-scrollbar">
             <nav className="flex flex-col gap-1">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
@@ -203,7 +227,7 @@ export function SettingsModal({
           </div>
 
           {/* Main content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
             {localSettings && (
               <>
                 {/* General Tab */}
@@ -451,46 +475,6 @@ export function SettingsModal({
                         currentVersion={currentVersion}
                       />
                     </div>
-
-                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-6">
-                      <h3 className="text-sm font-semibold mb-3">Tool Updates</h3>
-
-                      <label className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={localSettings.updates.auto_update_ytdlp}
-                          onChange={(e) => updateUpdates("auto_update_ytdlp", e.target.checked)}
-                          className="h-4 w-4 rounded"
-                        />
-                        <span className="text-sm">Auto-update yt-dlp</span>
-                      </label>
-
-                      <label className="flex items-center gap-3 mt-3">
-                        <input
-                          type="checkbox"
-                          checked={localSettings.updates.auto_update_ffmpeg}
-                          onChange={(e) => updateUpdates("auto_update_ffmpeg", e.target.checked)}
-                          className="h-4 w-4 rounded"
-                        />
-                        <span className="text-sm">Auto-update ffmpeg</span>
-                      </label>
-
-                      <div className="mt-4">
-                        <label className="mb-2 block text-sm font-medium">
-                          Check Interval (hours)
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={168}
-                          value={localSettings.updates.check_interval_hours}
-                          onChange={(e) =>
-                            updateUpdates("check_interval_hours", parseInt(e.target.value) || 24)
-                          }
-                          className="w-24 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                        />
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -597,6 +581,7 @@ export function SettingsModal({
               )}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

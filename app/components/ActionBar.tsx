@@ -83,6 +83,7 @@ export function ActionBar({
 
         {/* ── Download button ─────────────────────────── */}
         <button
+          id="download-button"
           type="button"
           onClick={onDownload}
           disabled={disabled || isLoading}
