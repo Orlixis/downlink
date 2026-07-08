@@ -16,7 +16,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   create-release:
@@ -26,7 +25,7 @@ jobs:
       release_upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
 
@@ -90,7 +89,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
 
@@ -271,8 +270,8 @@ jobs:
             echo "Uploaded $filename"
           done
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload binaries to workflow artifact
+        uses: actions/upload-artifact@v7
         with:
           name: Downlink-${{ matrix.name }}
           path: |
@@ -296,7 +295,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Get version from tag
         id: get_version
@@ -307,7 +306,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
