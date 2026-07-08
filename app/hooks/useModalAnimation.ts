@@ -56,16 +56,16 @@ export function useModalAnimation({
       // ENTRANCE ANIMATION
       const tl = gsap.timeline();
 
-      const w = modalRef.current.offsetWidth || window.innerWidth * 0.5;
-      const h = modalRef.current.offsetHeight || window.innerHeight * 0.5;
+      const w = modalRef.current.offsetWidth || window.innerWidth * 0.2;
+      const h = modalRef.current.offsetHeight || window.innerHeight * 0.2;
 
       // Lock the content size so it doesn't reflow when the modal wrapper shrinks to 40px
       gsap.set(contentRef.current, { width: w, height: h, opacity: 0 });
 
       // Start state: Tiny 40x40 ball exactly at the target icon
       gsap.set(modalRef.current, {
-        width: 40,
-        height: 40,
+        width: 25,
+        height: 25,
         x: targetX,
         y: targetY,
         borderRadius: "50%",
@@ -137,8 +137,8 @@ export function useModalAnimation({
       
       // 2. Morph in place into a tiny ball
       .to(modalRef.current, {
-        width: 40,
-        height: 40,
+        width: 25,
+        height: 25,
         borderRadius: "50%",
         backgroundColor: "#3b82f6", // Solid blue ball
         boxShadow: "0 0 30px 10px rgba(59, 130, 246, 0.6)", // Blue glow

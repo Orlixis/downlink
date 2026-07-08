@@ -12,5 +12,8 @@
       "filename": "src-tauri/Cargo.toml",
       "updater": "./toml-updater.js"
     }
-  ]
+  ],
+  "scripts": {
+    "postbump": "bun install && cd src-tauri && cargo generate-lockfile && cd .. && git add bun.lock src-tauri/Cargo.lock"
+  }
 }

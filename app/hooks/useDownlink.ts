@@ -133,6 +133,36 @@ export function useDownlink(): UseDownlinkReturn {
   // Refs for cleanup
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
+  // Trigger notifications for newly completed downloads
+  const notifiedIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    queue.forEach(item => {
+      if (item.status === "done" && !notifiedIdsRef.current.has(item.id)) {
+        notifiedIdsRef.current.add(item.id);
+        
+        // Check if we are running in tauri
+        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+          import('@tauri-apps/plugin-notification').then(async ({ isPermissionGranted, requestPermission, sendNotification }) => {
+            let granted = await isPermissionGranted();
+            if (!granted) {
+              const permission = await requestPermission();
+              granted = permission === 'granted';
+            }
+            if (granted) {
+              sendNotification({
+                title: "Download Complete",
+                body: `${item.title || 'Video'} has finished downloading.`,
+              });
+            }
+          }).catch(err => {
+            console.error("[Downlink] Failed to send notification:", err);
+          });
+        }
+      }
+    });
+  }, [queue]);
+
   // Check if we're running in Tauri
   useEffect(() => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
