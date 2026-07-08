@@ -1313,9 +1313,35 @@ fn emit_app_ready(app: &AppHandle, yt_dlp_version: Option<String>, ffmpeg_versio
 // App Entry Point
 // ============================================================================
 
+#[derive(serde::Deserialize, serde::Serialize)]
+struct RawOEmbed {
+    title: Option<String>,
+    author_name: Option<String>,
+    thumbnail_url: Option<String>,
+    duration: Option<u64>,
+}
+
+#[tauri::command]
+async fn proxy_oembed_request(endpoint_url: String) -> Result<Option<RawOEmbed>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client.get(&endpoint_url).send().await.map_err(|e| e.to_string())?;
+    
+    if !res.status().is_success() {
+        return Ok(None);
+    }
+    
+    let data: RawOEmbed = res.json().await.map_err(|e| e.to_string())?;
+    Ok(Some(data))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1332,7 +1358,7 @@ pub fn run() {
             // Set explicit Edit menu so Cmd+C/Cmd+V work on macOS without WebKit popup
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
+                use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
                 if let Ok(menu) = Menu::new(app.handle()) {
                     // Add standard App menu (Downlink)
                     if let Ok(app_submenu) = Submenu::with_items(
@@ -1478,6 +1504,7 @@ pub fn run() {
             set_window_title,
             // Fast preview
             fast_fetch_metadata,
+            proxy_oembed_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

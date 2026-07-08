@@ -10,6 +10,7 @@
  */
 
 import type { FetchMetadataResult } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 
 // ─── Provider registry ──────────────────────────────────────────────────────
 
@@ -126,21 +127,9 @@ export async function tryOEmbedPreview(
   if (!endpointUrl) return null; // Not a supported site
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5_000);
+    const data: RawOEmbed | null = await invoke("proxy_oembed_request", { endpointUrl });
 
-    const res = await fetch(endpointUrl, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-    });
-
-    clearTimeout(timer);
-    if (!res.ok) return null;
-
-    const data: RawOEmbed = await res.json();
-
-    // Require at least a title — otherwise the response is useless for preview
-    if (!data.title) return null;
+    if (!data || !data.title) return null;
 
     return {
       id: "00000000-0000-0000-0000-000000000000", // placeholder, same as UUID::nil()
