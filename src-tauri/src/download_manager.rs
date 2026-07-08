@@ -450,7 +450,10 @@ impl DownloadManager {
                 if domain_count >= MAX_PER_DOMAIN {
                     log::info!(
                         "Per-domain limit reached for '{}' ({}/{}), download {} will wait",
-                        hostname, domain_count, MAX_PER_DOMAIN, id
+                        hostname,
+                        domain_count,
+                        MAX_PER_DOMAIN,
+                        id
                     );
                     return Ok(());
                 }
@@ -529,7 +532,11 @@ impl DownloadManager {
                 // Update status to Fetching
                 {
                     let mut db_guard = db.lock().await;
-                    let _ = db_guard.set_status(id, DownloadStatus::Fetching, Some("Fetching metadata..."));
+                    let _ = db_guard.set_status(
+                        id,
+                        DownloadStatus::Fetching,
+                        Some("Fetching metadata..."),
+                    );
                 }
 
                 // Emit progress event for fetching phase
@@ -593,7 +600,6 @@ impl DownloadManager {
                 }
             }
 
-
             // ── Phase 2: Emit Started, then enter retry loop ──────────────────
             // Update status to Downloading
             {
@@ -601,9 +607,7 @@ impl DownloadManager {
                 let _ = db_guard.set_status(id, DownloadStatus::Downloading, Some("Starting..."));
             }
 
-            let _ = event_tx
-                .send(DownlinkEvent::DownloadStarted { id })
-                .await;
+            let _ = event_tx.send(DownlinkEvent::DownloadStarted { id }).await;
 
             let source_url = download_info.source_url.clone();
             let preset_id = download_info.preset_id.clone();
@@ -624,7 +628,11 @@ impl DownloadManager {
                 let cancel_rx = match cancel_rx {
                     Some(rx) => rx,
                     None => {
-                        log::info!("Download {} was removed before retry attempt {}", id, attempt + 1);
+                        log::info!(
+                            "Download {} was removed before retry attempt {}",
+                            id,
+                            attempt + 1
+                        );
                         break Err(DownloadError::Stopped);
                     }
                 };
@@ -655,7 +663,10 @@ impl DownloadManager {
                         let delay = BASE_DELAY_SECS * (1 << attempt); // 5s, 10s, 20s
                         log::warn!(
                             "Download {} failed (attempt {}/{}), retrying in {}s…",
-                            id, attempt, MAX_RETRIES, delay
+                            id,
+                            attempt,
+                            MAX_RETRIES,
+                            delay
                         );
                         // Surface a retrying event so the UI shows feedback
                         let _ = event_tx
@@ -669,7 +680,10 @@ impl DownloadManager {
                                     speed_bps: None,
                                     eta_seconds: Some(delay),
                                     phase: Some(Phase {
-                                        name: format!("Retrying in {}s… (attempt {}/{})", delay, attempt, MAX_RETRIES),
+                                        name: format!(
+                                            "Retrying in {}s… (attempt {}/{})",
+                                            delay, attempt, MAX_RETRIES
+                                        ),
                                         detail: None,
                                     }),
                                 },
@@ -872,7 +886,7 @@ async fn execute_download(
     // ── Decode feature-flag suffixes from preset_id ───────────────────────────
     // Format: "<base_preset>[+subs][+sb]"  e.g. "best_video+subs+sb"
     // Use replace() to strip suffixes — safe on any byte boundary.
-    let wants_subtitles    = preset_id.contains("+subs");
+    let wants_subtitles = preset_id.contains("+subs");
     let wants_sponsorblock = preset_id.contains("+sb");
     let clean_preset = preset_id.replace("+subs", "").replace("+sb", "");
     let preset_id = clean_preset.as_str();
@@ -937,7 +951,10 @@ async fn execute_download(
     if resumable {
         args.push("--continue".to_string());
         args.push("--no-part".to_string()); // write directly to final file so --continue works
-        log::info!("Download {} is resumable — injecting --continue --no-part", id);
+        log::info!(
+            "Download {} is resumable — injecting --continue --no-part",
+            id
+        );
     }
 
     // Add ffmpeg location if configured

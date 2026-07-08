@@ -22,7 +22,7 @@ export function SplashScreen({ onComplete, minimumDuration = 2000 }: SplashScree
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950 transition-opacity duration-400 ${
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-transparent transition-opacity duration-400 ${
         isFadingOut ? "opacity-0" : "opacity-100"
       }`}
     >

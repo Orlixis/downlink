@@ -11,6 +11,7 @@
     "core:event:allow-emit",
     "core:event:allow-listen",
     "updater:default",
-    "process:default"
+    "process:default",
+    "clipboard-manager:default"
   ]
 }

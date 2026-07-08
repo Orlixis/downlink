@@ -55,7 +55,7 @@ export function HeaderBar({
   );
 
   return (
-    <div className="flex flex-col border-b border-zinc-800/80 bg-zinc-950">
+    <div className="flex flex-col border-b border-zinc-800/80 bg-transparent">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {/* Logo */}
         <div className="flex-shrink-0 pt-0.5">

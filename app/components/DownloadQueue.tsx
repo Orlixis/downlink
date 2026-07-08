@@ -28,8 +28,6 @@ import { formatSpeed } from "../types";
 interface DownloadQueueProps {
   queue: QueueItem[];
   history: QueueItem[];
-  showHistory: boolean;
-  onShowHistoryChange: (value: boolean) => void;
   onStop: (id: string) => void;
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
@@ -106,8 +104,6 @@ function SortableQueueItem({
 export function DownloadQueue({
   queue,
   history,
-  showHistory,
-  onShowHistoryChange,
   onStop,
   onCancel,
   onRemove,
@@ -117,6 +113,7 @@ export function DownloadQueue({
   onClearQueue,
   onClearHistory,
 }: DownloadQueueProps) {
+  const [showHistory, setShowHistory] = useState(false);
   const [orderedQueue, setOrderedQueue] = useState<QueueItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -179,12 +176,12 @@ export function DownloadQueue({
   };
 
   return (
-    <div className="flex w-full flex-col border-l border-zinc-800/80 bg-zinc-950 h-full">
+    <div className="flex w-full flex-col border-l border-zinc-800/80 bg-transparent h-full">
       {/* ── Header / Tabs ──────────────────────────────── */}
       <div className="flex border-b border-zinc-800/80 px-1 pt-1">
         <button
           type="button"
-          onClick={() => onShowHistoryChange(false)}
+          onClick={() => setShowHistory(false)}
           className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg px-2 py-2.5 text-xs font-medium transition-colors ${
             !showHistory ? "text-white" : "text-zinc-500 hover:text-zinc-300"
           }`}
@@ -207,7 +204,7 @@ export function DownloadQueue({
 
         <button
           type="button"
-          onClick={() => onShowHistoryChange(true)}
+          onClick={() => setShowHistory(true)}
           className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg px-2 py-2.5 text-xs font-medium transition-colors ${
             showHistory ? "text-white" : "text-zinc-500 hover:text-zinc-300"
           }`}

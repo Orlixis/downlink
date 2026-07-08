@@ -165,17 +165,31 @@ impl YtDlpRunner {
         // Find the first line matching our tab-delimited print format
         for line in &lines {
             let parts: Vec<&str> = line.splitn(5, '\t').collect();
-            if parts.len() < 2 { continue; }
+            if parts.len() < 2 {
+                continue;
+            }
             let resolved_url = if parts[0].starts_with("http") {
                 parts[0].to_string()
             } else {
                 url.to_string()
             };
-            let title = if parts[1].is_empty() || parts[1] == "NA" { None } else { Some(parts[1].to_string()) };
-            if title.is_none() { continue; } // no title = not a valid video
+            let title = if parts[1].is_empty() || parts[1] == "NA" {
+                None
+            } else {
+                Some(parts[1].to_string())
+            };
+            if title.is_none() {
+                continue;
+            } // no title = not a valid video
 
-            let uploader = parts.get(2).filter(|s| !s.is_empty() && **s != "NA").map(|s| s.to_string());
-            let thumbnail_url = parts.get(3).filter(|s| !s.is_empty() && **s != "NA").map(|s| s.to_string());
+            let uploader = parts
+                .get(2)
+                .filter(|s| !s.is_empty() && **s != "NA")
+                .map(|s| s.to_string());
+            let thumbnail_url = parts
+                .get(3)
+                .filter(|s| !s.is_empty() && **s != "NA")
+                .map(|s| s.to_string());
             let duration_seconds = parts.get(4).and_then(|s| s.trim().parse::<u64>().ok());
 
             return Ok(Some(PreviewMetadata {
@@ -301,7 +315,8 @@ impl YtDlpRunner {
                 kind: YtDlpErrorKind::NotFound,
                 message: format!("yt-dlp not found at {}", self.cfg.yt_dlp_path.display()),
                 output: None,
-            }.into());
+            }
+            .into());
         }
 
         let mut cmd = Command::new(&self.cfg.yt_dlp_path);
@@ -350,19 +365,29 @@ impl YtDlpRunner {
             return Err(YtDlpError {
                 kind: YtDlpErrorKind::Timeout,
                 message: format!("yt-dlp timed out after {:?}", timeout),
-                output: Some(YtDlpOutput { stdout_lines: all_lines, stderr_lines, exit_code: None }),
-            }.into());
+                output: Some(YtDlpOutput {
+                    stdout_lines: all_lines,
+                    stderr_lines,
+                    exit_code: None,
+                }),
+            }
+            .into());
         }
         timed.unwrap()?;
         let status = child.wait().await?;
-        let output = YtDlpOutput { stdout_lines: all_lines.clone(), stderr_lines, exit_code: status.code() };
+        let output = YtDlpOutput {
+            stdout_lines: all_lines.clone(),
+            stderr_lines,
+            exit_code: status.code(),
+        };
 
         if !status.success() {
             return Err(YtDlpError {
                 kind: YtDlpErrorKind::NonZeroExit,
                 message: format!("yt-dlp exited {:?}", status.code()),
                 output: Some(output),
-            }.into());
+            }
+            .into());
         }
         Ok((all_lines, output))
     }

@@ -36,7 +36,7 @@ export function ActionBar({
   const isLoading = isSubmitting || previewLoading;
 
   return (
-    <div className="border-t border-zinc-800/80 bg-zinc-950/50 px-3 py-2.5">
+    <div className="border-t border-zinc-800/80 bg-transparent px-3 py-2.5">
       <div className="flex items-center gap-2">
 
         {/* ── Toggle buttons ─────────────────────────── */}

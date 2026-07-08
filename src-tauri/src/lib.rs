@@ -82,8 +82,8 @@ async fn get_or_init_download_manager(
         log::info!("Event forwarding task started");
 
         // Per-download state for aggregate progress calculation
-        let mut speed_map: HashMap<Uuid, u64>  = HashMap::new(); // id → bytes/s
-        let mut pct_map:   HashMap<Uuid, f64>  = HashMap::new(); // id → percent 0..100
+        let mut speed_map: HashMap<Uuid, u64> = HashMap::new(); // id → bytes/s
+        let mut pct_map: HashMap<Uuid, f64> = HashMap::new(); // id → percent 0..100
 
         while let Some(event) = event_rx.recv().await {
             // ── Side-effect: update window title + dock progress ──────────────
@@ -98,9 +98,9 @@ async fn get_or_init_download_manager(
                     update_dock_and_title(&app_handle, &speed_map, &pct_map);
                 }
                 DownlinkEvent::DownloadCompleted { id, .. }
-                | DownlinkEvent::DownloadFailed   { id, .. }
+                | DownlinkEvent::DownloadFailed { id, .. }
                 | DownlinkEvent::DownloadCanceled { id }
-                | DownlinkEvent::DownloadStopped  { id } => {
+                | DownlinkEvent::DownloadStopped { id } => {
                     speed_map.remove(id);
                     pct_map.remove(id);
                     update_dock_and_title(&app_handle, &speed_map, &pct_map);
@@ -373,8 +373,12 @@ fn add_urls(
         // execute_download strips and decodes them to inject yt-dlp flags.
         let effective_preset = {
             let mut p = options.preset_id.clone();
-            if options.subtitles_enabled { p.push_str("+subs"); }
-            if options.sponsorblock_enabled { p.push_str("+sb"); }
+            if options.subtitles_enabled {
+                p.push_str("+subs");
+            }
+            if options.sponsorblock_enabled {
+                p.push_str("+sb");
+            }
             p
         };
 
@@ -459,12 +463,17 @@ async fn fetch_metadata(
         if cache.len() >= 64 {
             cache.retain(|_, v| v.fetched_at.elapsed() < CACHE_TTL);
         }
-        cache.insert(first, CachedMeta { result: result.clone(), fetched_at: Instant::now() });
+        cache.insert(
+            first,
+            CachedMeta {
+                result: result.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
     }
 
     Ok(result)
 }
-
 
 /// Phase-1 fast preview: returns title/uploader/thumbnail/duration in ~2-3s.
 /// Does NOT enumerate quality formats (that requires --dump-json).
@@ -516,7 +525,13 @@ async fn fast_fetch_metadata(
                 if cache.len() >= 64 {
                     cache.retain(|_, v| v.fetched_at.elapsed() < CACHE_TTL);
                 }
-                cache.insert(first, CachedMeta { result: result.clone(), fetched_at: Instant::now() });
+                cache.insert(
+                    first,
+                    CachedMeta {
+                        result: result.clone(),
+                        fetched_at: Instant::now(),
+                    },
+                );
             }
             Ok(Some(result))
         }
@@ -1301,6 +1316,7 @@ fn emit_app_ready(app: &AppHandle, yt_dlp_version: Option<String>, ffmpeg_versio
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -1312,6 +1328,70 @@ pub fn run() {
                     .level(log::LevelFilter::Info)
                     .build(),
             )?;
+
+            // Set explicit Edit menu so Cmd+C/Cmd+V work on macOS without WebKit popup
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, Submenu, PredefinedMenuItem};
+                if let Ok(menu) = Menu::new(app.handle()) {
+                    // Add standard App menu (Downlink)
+                    if let Ok(app_submenu) = Submenu::with_items(
+                        app.handle(),
+                        "Downlink",
+                        true,
+                        &[
+                            &PredefinedMenuItem::services(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::separator(app.handle()).unwrap(),
+                            &PredefinedMenuItem::hide(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::hide_others(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::show_all(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::separator(app.handle()).unwrap(),
+                            &PredefinedMenuItem::quit(app.handle(), None).unwrap(),
+                        ],
+                    ) {
+                        let _ = menu.append(&app_submenu);
+                    }
+
+                    // Add standard Edit menu (critical for native Copy/Paste)
+                    if let Ok(edit_submenu) = Submenu::with_items(
+                        app.handle(),
+                        "Edit",
+                        true,
+                        &[
+                            &PredefinedMenuItem::undo(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::redo(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::separator(app.handle()).unwrap(),
+                            &PredefinedMenuItem::cut(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::copy(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::paste(app.handle(), None).unwrap(),
+                            &PredefinedMenuItem::select_all(app.handle(), None).unwrap(),
+                        ],
+                    ) {
+                        let _ = menu.append(&edit_submenu);
+                    }
+
+                    let _ = app.set_menu(menu);
+                }
+            }
+
+            // Initialize window vibrancy for the Apple aesthetic
+            let window = app.get_webview_window("main").unwrap();
+            #[cfg(target_os = "macos")]
+            {
+                use window_vibrancy::{
+                    apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
+                };
+                let _ = apply_vibrancy(
+                    &window,
+                    NSVisualEffectMaterial::HudWindow,
+                    Some(NSVisualEffectState::Active),
+                    None,
+                );
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let _ = window_vibrancy::apply_mica(&window, None);
+            }
 
             // Initialize per-user dirs + SQLite
             let mut db = db::Db::open().map_err(|e| tauri::Error::Anyhow(e))?;

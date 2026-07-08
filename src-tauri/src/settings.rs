@@ -624,7 +624,10 @@ mod tests {
         let loaded = manager.get_user_settings().unwrap();
 
         assert_eq!(loaded.general.concurrency, 4);
-        assert_eq!(loaded.general.download_folder, PathBuf::from("/custom/path"));
+        assert_eq!(
+            loaded.general.download_folder,
+            PathBuf::from("/custom/path")
+        );
     }
 
     #[test]

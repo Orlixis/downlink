@@ -410,11 +410,28 @@ export function useDownlink(): UseDownlinkReturn {
         try {
           const updateInfo = await invoke<AppUpdateInfo>("check_app_update");
           if (updateInfo.available) {
-            setUpdateAvailable({
-              available: true,
-              latestVersion: updateInfo.latest_version,
-              dismissed: false,
-            });
+            console.log("App update available, downloading silently in background...", updateInfo.latest_version);
+            
+            // Auto-trigger the installation
+            try {
+              const { check } = await import("@tauri-apps/plugin-updater");
+              const update = await check();
+              if (update) {
+                await update.downloadAndInstall((event) => {
+                  if (event.event === "Finished") {
+                    console.log("Background update finished downloading! Will apply on next restart.");
+                    // Notify UI that a downloaded update is waiting for a restart
+                    setUpdateAvailable({
+                      available: true,
+                      latestVersion: updateInfo.latest_version,
+                      dismissed: false,
+                    });
+                  }
+                });
+              }
+            } catch (installErr) {
+              console.error("Failed to auto-install background update:", installErr);
+            }
           }
         } catch (e) {
           // Silently fail update check - not critical

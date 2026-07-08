@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { useDownlink } from "./hooks/useDownlink";
 import { SettingsModal } from "./components/SettingsModal";
 import { PlaylistDialog } from "./components/PlaylistDialog";
@@ -98,12 +98,14 @@ export default function Home() {
   // Extract + expand URLs from input.
   // Range patterns like [23-27] are expanded to individual URLs.
   // rangeGroups tracks which original patterns produced multiple URLs (for the panel batch card).
+  const deferredUrlInput = useDeferredValue(urlInput);
+  
   const { extractedUrls, rangeGroups } = useMemo(() => {
-    if (!urlInput.trim()) {
+    if (!deferredUrlInput.trim()) {
       return { extractedUrls: [] as string[], rangeGroups: [] as { pattern: string; urls: string[] }[] };
     }
 
-    const normalized = normalizeBareUrls(urlInput);
+    const normalized = normalizeBareUrls(deferredUrlInput);
     const tokens = normalized.match(/https?:\/\/[^\s]+/g) ?? [];
     const seen = new Set<string>();
     const urls: string[] = [];
@@ -124,7 +126,7 @@ export default function Home() {
     }
 
     return { extractedUrls: urls, rangeGroups: ranges };
-  }, [urlInput]);
+  }, [deferredUrlInput]);
 
   // Flat set of all range-expanded URLs — these are NOT previewed individually
   const rangeExpandedSet = useMemo(
@@ -191,7 +193,13 @@ export default function Home() {
         if (document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
           e.preventDefault();
           try {
-            const text = await navigator.clipboard.readText();
+            let text = "";
+            if (downlink.isTauri) {
+              const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+              text = await readText() || "";
+            } else {
+              text = await navigator.clipboard.readText();
+            }
             if (text && text.includes("http")) {
               setUrlInput(text);
               inputRef.current?.focus();
@@ -207,13 +215,16 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Detect URL in clipboard when window regains focus (tab visible).
-  // Only surfaces the banner if the URL is new and not already in the input.
+  // Detect URL in clipboard and auto-focus when window regains focus.
   useEffect(() => {
     if (!downlink.isTauri) return;
     const handleFocus = async () => {
+      // Always auto-focus input when returning to the app
+      setTimeout(() => inputRef.current?.focus(), 50);
+
       try {
-        const text = await navigator.clipboard.readText();
+        const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+        const text = await readText();
         if (!text) return;
         const urls = text.match(/https?:\/\/[^\s]+/);
         if (!urls) return;
@@ -231,11 +242,22 @@ export default function Home() {
       if (document.visibilityState === "visible") handleFocus();
     };
 
+    const handleGlobalClick = (e: MouseEvent) => {
+      // Focus input if user clicks empty space (not buttons, inputs, links, etc.)
+      const target = e.target as HTMLElement;
+      const isInteractive = target.closest('button, input, textarea, a, select, [role="button"], [role="menuitem"], [role="dialog"], [role="switch"]');
+      if (!isInteractive && inputRef.current) {
+        inputRef.current.focus();
+      }
+    };
+
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("focus", handleFocus);
+    window.addEventListener("click", handleGlobalClick);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("click", handleGlobalClick);
     };
   }, [downlink.isTauri, urlInput]);
 
@@ -481,13 +503,19 @@ export default function Home() {
   // Handle paste button
   const handlePaste = useCallback(async () => {
     try {
-      const text = await navigator.clipboard.readText();
+      let text = "";
+      if (downlink.isTauri) {
+        const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+        text = await readText() || "";
+      } else {
+        text = await navigator.clipboard.readText();
+      }
       setUrlInput(text);
       inputRef.current?.focus();
     } catch {
       inputRef.current?.focus();
     }
-  }, []);
+  }, [downlink.isTauri]);
 
   // Handle download
   const handleDownload = useCallback(async () => {
@@ -736,7 +764,7 @@ export default function Home() {
 
   return (
     <div
-      className={`flex h-screen flex-col bg-zinc-950 text-white ${isDragging ? "ring-2 ring-inset ring-blue-500" : ""}`}
+      className={`flex h-screen flex-col bg-transparent text-white ${isDragging ? "ring-2 ring-inset ring-blue-500 bg-blue-500/10" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -840,8 +868,6 @@ export default function Home() {
         <DownloadQueue
           queue={downlink.queue}
           history={downlink.history}
-          showHistory={showHistory}
-          onShowHistoryChange={setShowHistory}
           onStop={downlink.stopDownload}
           onCancel={downlink.cancelDownload}
           onRemove={downlink.removeDownload}

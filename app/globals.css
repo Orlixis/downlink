@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-    --background: #ffffff;
+    --background: transparent;
     --foreground: #171717;
 
     /* Downlink brand colors - from logo (blue to cyan) */
@@ -38,7 +38,7 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --background: #0a0a0a;
+        --background: transparent;
         --foreground: #ededed;
     }
 }
