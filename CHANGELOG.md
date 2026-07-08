@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.24](https://github.com/Orlixis/downlink/compare/v0.1.23...v0.1.24) (2026-07-08)
+
+
+### Features
+
+* add postbump script to sync lockfiles after version updates ([17728b6](https://github.com/Orlixis/downlink/commit/17728b645d398721603a251441e7d20d9dce232c))
+
 ### [0.1.23](https://github.com/Orlixis/downlink/compare/v0.1.22...v0.1.23) (2026-07-08)
 
 ### [0.1.22](https://github.com/Orlixis/downlink/compare/v0.1.21...v0.1.22) (2026-07-08)
