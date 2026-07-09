@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.27](https://github.com/Orlixis/downlink/compare/v0.1.26...v0.1.27) (2026-07-09)
+
+
+### Features
+
+* add non-mac platform detection and refine drag region implementation for HeaderBar ([312e005](https://github.com/Orlixis/downlink/commit/312e00551972257dcf95e23bd99efc62c092252c))
+* implement cinematic black hole and drop zone UI components with GSAP animations ([2374ce4](https://github.com/Orlixis/downlink/commit/2374ce4d708e4ef96eb210783e60c15e2c737bb5))
+
 ### [0.1.26](https://github.com/Orlixis/downlink/compare/v0.1.25...v0.1.26) (2026-07-09)
 
 ### [0.1.25](https://github.com/Orlixis/downlink/compare/v0.1.24...v0.1.25) (2026-07-08)
