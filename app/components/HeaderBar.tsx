@@ -60,13 +60,16 @@ export function HeaderBar({
   );
 
   return (
-    <div 
-      className="flex flex-col border-b border-zinc-800/80 bg-transparent"
-      data-tauri-drag-region
-    >
-      <div className="flex items-start gap-2.5 pr-3 pl-[80px] py-3" data-tauri-drag-region>
+    <div className="relative flex flex-col border-b border-zinc-800/80 bg-transparent">
+      {/* Absolute background drag region */}
+      <div 
+        data-tauri-drag-region="true" 
+        className="absolute inset-0" 
+      />
+      
+      <div className="relative flex items-start gap-2.5 pr-3 pl-[80px] py-3 pointer-events-none">
         {/* Logo */}
-        <div className="flex-shrink-0 pt-0.5">
+        <div className="flex-shrink-0 pt-0.5 pointer-events-auto">
           <Image
             src="/downlink-square.png"
             alt="Downlink"
@@ -78,7 +81,7 @@ export function HeaderBar({
         </div>
 
         {/* Auto-growing textarea */}
-        <div className="relative flex-1">
+        <div className="relative flex-1 pointer-events-auto">
           <textarea
             ref={resolvedRef}
             value={urlInput}
@@ -162,7 +165,7 @@ export function HeaderBar({
             id="update-button"
             type="button"
             onClick={onUpdateClick}
-            className="group relative flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+            className="group relative flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white pointer-events-auto"
             title={updateState.downloading && updateState.downloadProgress 
               ? `Downloading update: ${Math.min(100, Math.round((updateState.downloadProgress.downloaded / (updateState.downloadProgress.total || 1)) * 100))}%`
               : "Update available"
@@ -218,7 +221,7 @@ export function HeaderBar({
           id="settings-button"
           type="button"
           onClick={onSettingsClick}
-          className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+          className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white pointer-events-auto"
           title="Settings"
           aria-label="Open settings"
         >
