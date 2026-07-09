@@ -11,8 +11,8 @@ import { ActionBar } from "./components/ActionBar";
 import { DownloadQueue } from "./components/DownloadQueue";
 import { Footer } from "./components/Footer";
 import { ResizableDivider } from "./components/ResizableDivider";
-import { ClipboardBanner } from "./components/ClipboardBanner";
 import { UpdateModal } from "./components/UpdateModal";
+import { BlackHoleOverlay } from "./components/BlackHoleOverlay";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
 import type { UserSettings, FetchMetadataResult, UrlPreviewItem, VideoQualityOption } from "./types";
@@ -60,6 +60,8 @@ export default function Home() {
   // Clipboard URL banner — detected on window focus, dismissed per URL
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
   const dismissedClipboardUrls = useRef<Set<string>>(new Set());
+  // Counter-based drag tracking so dragging over child elements doesn't flicker isDragging off
+  const dragCounterRef = useRef(0);
 
   const handleQueueWidthChange = useCallback((w: number) => {
     setQueueWidth(w);
@@ -225,35 +227,62 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Detect URL in clipboard and auto-focus when window regains focus.
+  // Keep a stable ref to urlInput so the focus handler always sees the latest value
+  // without being re-registered on every keystroke.
+  const urlInputRef = useRef(urlInput);
+  useEffect(() => { urlInputRef.current = urlInput; }, [urlInput]);
+
+  // Detect URL in clipboard when window regains focus — uses Tauri's native focus
+  // event API (more reliable than browser window.focus in a webview).
   useEffect(() => {
     if (!downlink.isTauri) return;
-    const handleFocus = async () => {
-      // Always auto-focus input when returning to the app
-      setTimeout(() => inputRef.current?.focus(), 50);
 
+    let tauriUnlisten: (() => void) | null = null;
+
+    const checkClipboard = async () => {
       try {
         const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
         const text = await readText();
         if (!text) return;
-        const urls = text.match(/https?:\/\/[^\s]+/);
-        if (!urls) return;
-        const detected = urls[0];
-        // Skip: already typed, same as current input, or previously dismissed
+        const match = text.match(/https?:\/\/[^\s]+/);
+        if (!match) return;
+        const detected = match[0].replace(/[,;.]+$/, ""); // strip trailing punctuation
         if (
-          urlInput.includes(detected) ||
+          urlInputRef.current.includes(detected) ||
           dismissedClipboardUrls.current.has(detected)
         ) return;
         setClipboardUrl(detected);
-      } catch { /* permission denied — silent */ }
+      } catch {
+        /* clipboard permission denied — silent */
+      }
     };
 
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") handleFocus();
+    const setup = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+
+        // Tauri's native OS-level focus event — fires when the user clicks into the app
+        const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+          if (focused) {
+            // Small delay so the OS clipboard is fully updated before we read it
+            setTimeout(checkClipboard, 100);
+          }
+        });
+        tauriUnlisten = unlisten;
+      } catch {
+        // Fallback: use browser visibilitychange if Tauri API import fails
+        const handleVisibility = () => {
+          if (document.visibilityState === "visible") checkClipboard();
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        tauriUnlisten = () => document.removeEventListener("visibilitychange", handleVisibility);
+      }
     };
+
+    setup();
 
     const handleGlobalClick = (e: MouseEvent) => {
-      // Focus input if user clicks empty space (not buttons, inputs, links, etc.)
       const target = e.target as HTMLElement;
       const isInteractive = target.closest('button, input, textarea, a, select, [role="button"], [role="menuitem"], [role="dialog"], [role="switch"]');
       if (!isInteractive && inputRef.current) {
@@ -261,40 +290,62 @@ export default function Home() {
       }
     };
 
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", handleFocus);
     window.addEventListener("click", handleGlobalClick);
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", handleFocus);
+      tauriUnlisten?.();
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [downlink.isTauri, urlInput]);
+  }, [downlink.isTauri]); // stable — urlInput accessed via ref
 
-  // Drag and drop handlers
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
+  // Native document-level drag listeners (React synthetic events are unreliable
+  // for external-application drags in Tauri webviews).
+  useEffect(() => {
+    const onDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current += 1;
+      setIsDragging(true);
+    };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
+    const onDragOver = (e: DragEvent) => {
+      // Must preventDefault to allow drop
+      e.preventDefault();
+    };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+    const onDragLeave = (e: DragEvent) => {
+      dragCounterRef.current -= 1;
+      if (dragCounterRef.current <= 0) {
+        dragCounterRef.current = 0;
+        setIsDragging(false);
+      }
+    };
 
-    const text = e.dataTransfer.getData("text/plain") || e.dataTransfer.getData("text/uri-list");
-    if (text && text.includes("http")) {
-      setUrlInput(text);
-      inputRef.current?.focus();
-    }
-  }, []);
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+
+      const text =
+        e.dataTransfer?.getData("text/plain") ||
+        e.dataTransfer?.getData("text/uri-list") ||
+        "";
+      if (text.includes("http")) {
+        setUrlInput(text.trim());
+        inputRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("dragenter", onDragEnter);
+    document.addEventListener("dragover", onDragOver);
+    document.addEventListener("dragleave", onDragLeave);
+    document.addEventListener("drop", onDrop);
+
+    return () => {
+      document.removeEventListener("dragenter", onDragEnter);
+      document.removeEventListener("dragover", onDragOver);
+      document.removeEventListener("dragleave", onDragLeave);
+      document.removeEventListener("drop", onDrop);
+    };
+  }, []); // stable — no deps needed
 
   // Stable refs so effect deps don't change every render
   const fetchMetadataRef = useRef(downlink.fetchMetadata);
@@ -795,28 +846,30 @@ export default function Home() {
 
   return (
     <div
-      className={`flex h-screen flex-col bg-transparent text-white ${isDragging ? "ring-2 ring-inset ring-blue-500 bg-blue-500/10" : ""}`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      className="relative flex h-screen flex-col bg-transparent text-white"
     >
-      {/* Clipboard URL banner */}
+      {/* Full-screen Black Hole Overlay — drag mode */}
+      {isDragging && (
+        <BlackHoleOverlay mode="drag" />
+      )}
+
+      {/* Full-screen Black Hole Overlay — clipboard mode */}
       {clipboardUrl && (
-        <div className="px-3 pt-2">
-          <ClipboardBanner
-            url={clipboardUrl}
-            onAccept={() => {
-              setUrlInput(clipboardUrl);
-              setClipboardUrl(null);
-              dismissedClipboardUrls.current.add(clipboardUrl);
-              inputRef.current?.focus();
-            }}
-            onDismiss={() => {
-              dismissedClipboardUrls.current.add(clipboardUrl);
-              setClipboardUrl(null);
-            }}
-          />
-        </div>
+        <BlackHoleOverlay
+          mode="clipboard"
+          clipboardUrl={clipboardUrl}
+          onAbsorb={() => {
+            // Animation already faded the overlay; now wire in the URL and start preview fetch
+            setUrlInput(clipboardUrl);
+            dismissedClipboardUrls.current.add(clipboardUrl);
+            setClipboardUrl(null);
+            inputRef.current?.focus();
+          }}
+          onDismiss={() => {
+            dismissedClipboardUrls.current.add(clipboardUrl);
+            setClipboardUrl(null);
+          }}
+        />
       )}
 
       {/* Header bar */}

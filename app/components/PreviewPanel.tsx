@@ -528,18 +528,6 @@ export function PreviewPanel({
   onSelectQualityForAll,
 }: PreviewPanelProps) {
 
-  if (isDragging) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center animate-fade-in">
-        <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-dashed border-blue-400 bg-blue-500/10 animate-pulse">
-          <CloudDownload className="h-9 w-9 text-blue-400" />
-        </div>
-        <h2 className="text-xl font-semibold text-blue-300">Drop URL here</h2>
-        <p className="mt-1.5 text-sm text-zinc-400">Release to add the video to your queue</p>
-      </div>
-    );
-  }
-
   const hasMultiple = allPreviews.length + rangeGroups.length > 1 || rangeGroups.length > 0;
 
   if (hasMultiple) {

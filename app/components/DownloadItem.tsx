@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { QueueItem } from "../types";
 import { formatBytes, formatSpeed, formatEta } from "../types";
+import { LiquidProgress } from "./LiquidProgress";
 
 interface DownloadItemProps {
   item: QueueItem;
@@ -353,29 +354,12 @@ export function DownloadItem({
       {/* ── Progress bar ──────────────────────────────────── */}
       {(isActive || isStopped || isDone) && (
         <div className="mt-2.5">
-          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-700/80">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ease-out ${
-                isDone
-                  ? "bg-green-500"
-                  : isStopped
-                  ? "bg-yellow-500"
-                  : "bg-gradient-to-r from-blue-500 to-cyan-500"
-              }`}
-              style={{
-                width: `${progress}%`,
-                boxShadow: isActive
-                  ? "0 0 8px rgba(59,130,246,0.55), 0 0 2px rgba(6,182,212,0.4)"
-                  : isDone
-                  ? "0 0 6px rgba(34,197,94,0.4)"
-                  : undefined,
-              }}
-            />
-            {/* Shimmer on indeterminate */}
-            {isActive && progress === 0 && (
-              <div className="progress-shimmer absolute inset-0" />
-            )}
-          </div>
+          <LiquidProgress 
+            progress={progress} 
+            isActive={isActive} 
+            isDone={isDone} 
+            isStopped={isStopped} 
+          />
 
           {/* Progress labels */}
           <div className="mt-1 flex items-center justify-between text-[10px] text-zinc-500 tabular-nums">
