@@ -765,23 +765,18 @@
     </footer>
 
     <script>
-        // GitHub repository info
-        const GITHUB_OWNER = 'Orlixis';
-        const GITHUB_REPO = 'downlink';
-        const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`;
+        // Fetch latest release info from the repository's latest.json to avoid GitHub API rate limits
+        const LATEST_JSON_URL = 'https://raw.githubusercontent.com/Orlixis/downlink/main/latest.json';
 
-        // Fetch latest release info from GitHub
         async function fetchLatestRelease() {
             try {
-                const response = await fetch(GITHUB_API_URL);
+                // Add a cache-buster so we don't get a stale latest.json
+                const response = await fetch(LATEST_JSON_URL + '?t=' + new Date().getTime());
                 if (!response.ok) {
-                    console.warn('Failed to fetch release info:', response.status);
+                    console.warn('Failed to fetch latest.json:', response.status);
                     return null;
                 }
-                const releases = await response.json();
-                // Find the first release that is not a draft and not a prerelease
-                const latest = releases.find(r => !r.draft && !r.prerelease);
-                return latest || null;
+                return await response.json();
             } catch (error) {
                 console.warn('Error fetching release:', error);
                 return null;
@@ -790,43 +785,29 @@
 
         // Update the page with latest release info
         async function updateReleaseInfo() {
-            const release = await fetchLatestRelease();
-            if (!release) return;
+            const data = await fetchLatestRelease();
+            if (!data || !data.version) return;
+
+            const version = data.version;
 
             // Update version badge
-            const version = release.tag_name.replace(/^v/, '');
             const versionSpan = document.getElementById('latest-version');
             if (versionSpan) {
                 versionSpan.textContent = version;
             }
 
-            // Find download assets
-            const assets = release.assets || [];
-
-            // Helper to find asset by pattern — prefers assets whose filename
-            // contains the release version to avoid picking up stale old-version
-            // files that may coexist in the same release from earlier build attempts.
-            const releaseVersion = release.tag_name ? release.tag_name.replace(/^v/, '') : '';
-            const findAsset = (patterns) => {
-                for (const pattern of patterns) {
-                    // 1st pass: prefer assets that match pattern AND current version
-                    if (releaseVersion) {
-                        const versioned = assets.find(a =>
-                            a.name.toLowerCase().includes(pattern.toLowerCase()) &&
-                            a.name.includes(releaseVersion)
-                        );
-                        if (versioned) return versioned.browser_download_url;
-                    }
-                    // 2nd pass: any asset matching the pattern (fallback for files without version in name)
-                    const asset = assets.find(a => a.name.toLowerCase().includes(pattern.toLowerCase()));
-                    if (asset) return asset.browser_download_url;
-                }
-                return null;
-            };
-
-            // Update macOS download links
-            const macosArmUrl = findAsset(['aarch64.dmg', 'arm64.dmg', '_aarch64.dmg']);
-            const macosIntelUrl = findAsset(['x64.dmg', 'x86_64.dmg', '_x64.dmg']);
+            // Construct URLs manually based on Tauri's default naming conventions
+            const baseUrl = `https://github.com/Orlixis/downlink/releases/download/v${version}`;
+            
+            const macosArmUrl = `${baseUrl}/Downlink_aarch64.dmg`;
+            const macosIntelUrl = `${baseUrl}/Downlink_x64.dmg`;
+            
+            const windowsExeUrl = `${baseUrl}/Downlink_${version}_x64-setup.exe`;
+            const windowsMsiUrl = `${baseUrl}/Downlink_${version}_x64_en-US.msi`;
+            
+            const linuxAppImageUrl = `${baseUrl}/Downlink_${version}_amd64.AppImage`;
+            const linuxDebUrl = `${baseUrl}/downlink_${version}_amd64.deb`;
+            const linuxRpmUrl = `${baseUrl}/downlink-${version}-1.x86_64.rpm`;
 
             const macosDownloadBtn = document.getElementById('macos-download-btn');
             const macosArmLink = document.getElementById('macos-arm-link');
@@ -834,20 +815,13 @@
             const macosChipBadge = document.getElementById('macos-chip-badge');
 
             // Populate the alternate download links unconditionally
-            if (macosArmLink && macosArmUrl) macosArmLink.href = macosArmUrl;
-            if (macosIntelLink && macosIntelUrl) macosIntelLink.href = macosIntelUrl;
+            if (macosArmLink) macosArmLink.href = macosArmUrl;
+            if (macosIntelLink) macosIntelLink.href = macosIntelUrl;
 
-            // Detect Apple Silicon vs Intel via WebAssembly SIMD probe.
-            // navigator.platform returns 'MacIntel' on BOTH chip types, so we use
-            // the only reliable browser-side signal: whether the engine supports
-            // WASM Fixed-Width SIMD (aarch64 feature). Falls back to ARM if WASM
-            // is unavailable or an error occurs.
+            // Detect Apple Silicon vs Intel via WebAssembly SIMD probe
             if (macosDownloadBtn && navigator.userAgent.includes('Mac')) {
                 detectAppleSilicon().then(isAppleSilicon => {
-                    const preferredUrl = isAppleSilicon ? macosArmUrl : macosIntelUrl;
-                    const fallbackUrl = macosArmUrl || macosIntelUrl;
-                    const targetUrl = preferredUrl || fallbackUrl;
-
+                    const targetUrl = isAppleSilicon ? macosArmUrl : macosIntelUrl;
                     if (targetUrl) macosDownloadBtn.href = targetUrl;
 
                     // Update button label
@@ -875,38 +849,29 @@
                 });
             } else if (macosDownloadBtn) {
                 // Non-Mac visitor — just point to ARM as the modern default
-                if (macosArmUrl) macosDownloadBtn.href = macosArmUrl;
+                macosDownloadBtn.href = macosArmUrl;
             }
 
             // Update Windows download links
-            const windowsExeUrl = findAsset(['x64-setup.exe', 'x64_setup.exe', 'setup.exe']);
-            const windowsMsiUrl = findAsset(['.msi']);
-
             const windowsDownloadBtn = document.getElementById('windows-download-btn');
             const windowsExeLink = document.getElementById('windows-exe-link');
             const windowsMsiLink = document.getElementById('windows-msi-link');
 
-            if (windowsDownloadBtn && windowsExeUrl) {
-                windowsDownloadBtn.href = windowsExeUrl;
-            }
-            if (windowsExeLink && windowsExeUrl) windowsExeLink.href = windowsExeUrl;
-            if (windowsMsiLink && windowsMsiUrl) windowsMsiLink.href = windowsMsiUrl;
+            if (windowsDownloadBtn) windowsDownloadBtn.href = windowsExeUrl;
+            if (windowsExeLink) windowsExeLink.href = windowsExeUrl;
+            if (windowsMsiLink) windowsMsiLink.href = windowsMsiUrl;
 
             // Update Linux download links
-            const linuxAppImageUrl = findAsset(['.appimage', 'AppImage']);
-            const linuxDebUrl = findAsset(['.deb']);
-            const linuxRpmUrl = findAsset(['.rpm']);
-
             const linuxDownloadBtn = document.getElementById('linux-download-btn');
             const linuxAppImageLink = document.getElementById('linux-appimage-link');
             const linuxDebLink = document.getElementById('linux-deb-link');
             const linuxRpmLink = document.getElementById('linux-rpm-link');
             const androidCard = document.getElementById('android-card');
 
-            if (linuxDownloadBtn && linuxAppImageUrl) linuxDownloadBtn.href = linuxAppImageUrl;
-            if (linuxAppImageLink && linuxAppImageUrl) linuxAppImageLink.href = linuxAppImageUrl;
-            if (linuxDebLink && linuxDebUrl) linuxDebLink.href = linuxDebUrl;
-            if (linuxRpmLink && linuxRpmUrl) linuxRpmLink.href = linuxRpmUrl;
+            if (linuxDownloadBtn) linuxDownloadBtn.href = linuxAppImageUrl;
+            if (linuxAppImageLink) linuxAppImageLink.href = linuxAppImageUrl;
+            if (linuxDebLink) linuxDebLink.href = linuxDebUrl;
+            if (linuxRpmLink) linuxRpmLink.href = linuxRpmUrl;
 
             console.log(`Updated download links to version ${version}`);
         }
