@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.29](https://github.com/Orlixis/downlink/compare/v0.1.28...v0.1.29) (2026-07-10)
+
+
+### Features
+
+* enable window dragging capabilities and set default dark mode theme ([76e6d98](https://github.com/Orlixis/downlink/commit/76e6d98399e338d2468efc7c5689d3e989e12149))
+
 ### [0.1.28](https://github.com/Orlixis/downlink/compare/v0.1.27...v0.1.28) (2026-07-10)
 
 ### [0.1.27](https://github.com/Orlixis/downlink/compare/v0.1.26...v0.1.27) (2026-07-09)
