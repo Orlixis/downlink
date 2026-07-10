@@ -1,23 +1,23 @@
 {
-  "version": "0.1.27",
-  "notes": "See the changelog at https://github.com/Orlixis/downlink/releases/tag/v0.1.27",
-  "pub_date": "2026-07-09T10:36:31Z",
+  "version": "0.1.29",
+  "notes": "See the changelog at https://github.com/Orlixis/downlink/releases/tag/v0.1.29",
+  "pub_date": "2026-07-10T20:32:59Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaGQ1ZkhvYS9hREtxVEJUYmtnVk5VUGtrUVNoM1ZSNnFKRncyZXR2bnVmMFZMN3lXalpiUDVEUUNmM0JiMXMrVlJUUzlSSlhKMFRNdHJIQXo3NGhDRGdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNTkyODY4CWZpbGU6RG93bmxpbmsuYXBwLnRhci5negpiUnNnK2dtK3p6Z3NYMmw1cW5pRkR6bmNiZklvdmZDVHRVK2c5OUtCZmt3c0JlaFVlRmRCc25OVnpDTDRZWldobG9lbnNwN2JSTmF1cnBtK0Jtek1DZz09Cg==",
-      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.27/Downlink_aarch64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaFJ4WnVtVTZSU1hqdkFJeFZnUnpBK052cEJpWHFDM0o3RTBSZ0ZOSExDSzQ3YktlWUF2TXhRWmNtMXQyeWxjQ1NHRmsvelY5U0ZvOGpWamxFU3dJbEFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzE1MTU5CWZpbGU6RG93bmxpbmsuYXBwLnRhci5nego1cFY5VUpyd1lyYXRDRTRSMUkyUVNtQ29IK3VOK3hIT0s0TGRreDREcEV0U2VKU1FMbmlSa0dyQVU4ZHRVcDdKbngyOTdJbnpSdG9rSllKZ3IwSkJEZz09Cg==",
+      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.29/Downlink_aarch64.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaFI4WWlEZnp6VzhId1dXWVl5bjdxcFFYK3lqZ0hGNGhScjY0dnJtQnY5TDJTWkdZMTE5VjVkT254TmZKazlUc1FzZDhEamUvZk9ZVkhIeVV5NGNKTGc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNTkzMTE3CWZpbGU6RG93bmxpbmsuYXBwLnRhci5negp3bVIzMzhzcE9IUkkraG9Eay9VS3duN2c4U1ZLK0tlZms3LzdlN1F1Sk84aklDem00NlA1YWFweWljYldEckY1dlEvd2hOV0ZiYXdMMjFOU0hHbDBEUT09Cg==",
-      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.27/Downlink_x64.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaGRBcGhwcGR1OFU5VHBnd0taNlVKdmVwSndIVXdtQ0VHODBQaUNCb2RvQVVNVzRmNkM2cnlGR0xVWjN2cktRSHpTdkRGWVVHRXRJeUlsV2QweVNqMGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzE1MjA2CWZpbGU6RG93bmxpbmsuYXBwLnRhci5negpCTnR2d1hxTU00djRBVUxoMU44UjhFZXVIczZaTGdGY2JuZlovQlF6aGltL05rZXNKeW9vaVlwOHVWSUxnUEhTZGdQa0xtelBseC9GSU9WSStnUHpBZz09Cg==",
+      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.29/Downlink_x64.app.tar.gz"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaGRRYTBKZCtIdWNGTERmYTJwQ1FGSVYzQXd1bi9DRlZNeHBKdHdDZHU5SzExZ0FLcGlaMG1CK3VhSFBLdHJHMzQ5QmZzbzlUTGJIMFZ5eGxaMFY3RkF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNTkzMzQyCWZpbGU6RG93bmxpbmtfMC4xLjI3X2FtZDY0LkFwcEltYWdlCitKWTE4dzI0QlI2SWVndXBrbHdHOHpvT1Uvc21rRlB4Smp1dE8yNllaZTE2ZjFGSS9hZ3orMzJZL05xRnhYSXhqN2NTWFpoN1hUZjFCdm1KNDd5dURBPT0K",
-      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.27/Downlink_0.1.27_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaFNubWx4c1N6dWs1QXAwRm1hMlVYeDJ2cm5jNHhOVDFHajg0b05ZdTVEQnBqVE5JNHFDU3pySGVsNGh2ZjNjN0E1eE5IU3BnUmZtdUFQWFB2ck04RVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzE1NTI5CWZpbGU6RG93bmxpbmtfMC4xLjI5X2FtZDY0LkFwcEltYWdlCnI0aUZjNlpZNloxRXZXbU00Q0RZZnZJcE8xK0x6VFNDb2lpdlNSWm50MVU3ZVYvZmhERzM1aWdQaWFlL2dudlUxbmFGOVdBYTNBRmJrVjlVNWVtWUJ3PT0K",
+      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.29/Downlink_0.1.29_amd64.AppImage"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaFR6cUhxQVZrZUYzb3FIOUNwYURxN0dCNVhHUWdTKzhFNDhlZ2Q0R0kraDVmYy8vSHRybFNWTEU3ZVhLTWdDb0dObHVncy9PQUJTT0V0QlluaGY5MHdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNTkzMjk3CWZpbGU6RG93bmxpbmtfMC4xLjI3X3g2NC1zZXR1cC5leGUKUWJXUkxWK1psbTgxNXYxNEZaR2NtTEdLV2dhWmxpYm5ZeG1uNWVXb3Y0NEtKSXlNZDV4L0VrcXAvR3g3K1NMQ2xpL3JRc3BaMWw0Zmp1MDUrQ01JQkE9PQo=",
-      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.27/Downlink_0.1.27_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZ2dKalFhbkkvaGQ5eUs1bnc4SEVxc0dCNVo0dXpjUXdoRUpWaWp1RVFaSi9Yb2l5OUw3RnhIaGt2azVqdnllelZkcTdPQXc5ejdsUGlpMzVVRGRNRk0wQStnNGlYVEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgzNzE1NDY4CWZpbGU6RG93bmxpbmtfMC4xLjI5X3g2NC1zZXR1cC5leGUKNGZFVmRpMjhXQTNxeXJ3NUViOUxPd2cvYTBtaVIwN21mdDFqWjRBZmp0TUV5SDVXakN4Ukt0ODI0d0VWbDJ2MEhha1BpNHNqNk1lUXdFVm9jdHdlQnc9PQo=",
+      "url": "https://github.com/Orlixis/downlink/releases/download/v0.1.29/Downlink_0.1.29_x64-setup.exe"
     }
   }
 }
