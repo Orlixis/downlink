@@ -174,8 +174,8 @@ download_ffmpeg() {
             fi
             ;;
         linux-x64)
-            # Use johnvansickle.com static builds for Linux
-            curl -L -o "$temp_dir/ffmpeg.tar.xz" "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+            # Use BtbN/FFmpeg-Builds for Linux x64
+            curl -L -o "$temp_dir/ffmpeg.tar.xz" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
             tar -xf "$temp_dir/ffmpeg.tar.xz" -C "$temp_dir"
             local ffmpeg_bin=$(find "$temp_dir" -name "ffmpeg" -type f -executable | head -1)
             if [[ -n "$ffmpeg_bin" ]]; then
@@ -187,7 +187,8 @@ download_ffmpeg() {
             fi
             ;;
         linux-arm64)
-            curl -L -o "$temp_dir/ffmpeg.tar.xz" "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
+            # Use BtbN/FFmpeg-Builds for Linux arm64
+            curl -L -o "$temp_dir/ffmpeg.tar.xz" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
             tar -xf "$temp_dir/ffmpeg.tar.xz" -C "$temp_dir"
             local ffmpeg_bin=$(find "$temp_dir" -name "ffmpeg" -type f -executable | head -1)
             if [[ -n "$ffmpeg_bin" ]]; then
