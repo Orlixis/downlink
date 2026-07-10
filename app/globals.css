@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
     color-scheme: dark;
     --background: transparent;
-    --foreground: #171717;
+    --foreground: #ededed;
 
     /* Downlink brand colors - from logo (blue to cyan) */
     --brand-blue: #2563eb;
@@ -37,22 +39,9 @@
     --color-brand-teal: var(--brand-teal);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --background: transparent;
-        --foreground: #ededed;
-    }
-}
-
 /* Fallback solid background for Windows/Linux where blur is unsupported */
 html.non-mac {
     --background: #09090b;
-}
-
-@media (prefers-color-scheme: dark) {
-    html.non-mac {
-        --background: #09090b;
-    }
 }
 
 /* ─── Base ──────────────────────────────────────────────── */
