@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.34](https://github.com/Orlixis/downlink/compare/v0.1.33...v0.1.34) (2026-07-11)
+
+
+### Features
+
+* add Mux player integration and orbiting package component ([183064d](https://github.com/Orlixis/downlink/commit/183064d5c32ac505603f6719dc5e3ba58c848019))
+
 ### [0.1.33](https://github.com/Orlixis/downlink/compare/v0.1.32...v0.1.33) (2026-07-11)
 
 
