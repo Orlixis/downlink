@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.32"
+version = "0.1.33"
 description = "Downlink — cross-platform media downloader powered by yt-dlp"
 authors = ["downlink contributors"]
 license = "MIT"

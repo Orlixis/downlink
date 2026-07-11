@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.33](https://github.com/Orlixis/downlink/compare/v0.1.32...v0.1.33) (2026-07-11)
+
+
+### Features
+
+* implement gravity-based cursor movement for clipboard pill in BlackHoleOverlay ([94e3332](https://github.com/Orlixis/downlink/commit/94e33321f82d1ff709b1b037173ec6dee9098d66))
+
 ### [0.1.32](https://github.com/Orlixis/downlink/compare/v0.1.31...v0.1.32) (2026-07-11)
 
 
