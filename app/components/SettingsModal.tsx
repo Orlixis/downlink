@@ -36,7 +36,7 @@ interface SettingsModalProps {
 
 type TabId = "general" | "formats" | "sponsorblock" | "subtitles" | "updates" | "network" | "transcription";
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+const TABS: { id: TabId; label: string; icon: any }[] = [
   { id: "general",       label: "General",       icon: Settings },
   { id: "formats",       label: "Formats",       icon: FileVideo },
   { id: "sponsorblock",  label: "SponsorBlock",  icon: Scissors },

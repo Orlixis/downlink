@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "Downlink application default capabilities",
   "windows": [
-    "main"
+    "main",
+    "splashscreen"
   ],
   "permissions": [
     "core:default",
@@ -17,6 +18,12 @@
     "core:window:default",
     "core:window:allow-start-dragging",
     "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text"
+    "clipboard-manager:allow-write-text",
+    "core:window:allow-show",
+    "core:window:allow-close",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-shadow",
+    "core:window:allow-set-background-color",
+    "core:window:allow-get-all-windows"
   ]
 }

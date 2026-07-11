@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Downlink",
         "width": 900,
         "height": 700,
@@ -23,7 +24,22 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "transparent": true,
+        "visible": false,
         "dragDropEnabled": false
+      },
+      {
+        "label": "splashscreen",
+        "url": "/splash",
+        "width": 500,
+        "height": 500,
+        "resizable": false,
+        "fullscreen": false,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "visible": true,
+        "dragDropEnabled": false,
+        "alwaysOnTop": true
       }
     ],
     "macOSPrivateApi": true,

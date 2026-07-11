@@ -42,6 +42,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "potrace": "^2.1.8",
     "standard-version": "^9.5.0",
     "tailwindcss": "^4",
     "typescript": "^5"

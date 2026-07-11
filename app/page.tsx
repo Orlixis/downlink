@@ -31,9 +31,8 @@ interface UrlPreview {
 export default function Home() {
   const downlink = useDownlink();
 
-  // Splash screen state
-  const [showSplash, setShowSplash] = useState(true);
-  const [appReady, setAppReady] = useState(false);
+  // App ready state
+  const [appReady, setAppReady] = useState(true);
 
   // Form state
   const [urlInput, setUrlInput] = useState("");
@@ -195,10 +194,7 @@ export default function Home() {
     }
   }, [downlink.updateAvailable.readyToInstall]);
 
-  // Handle splash screen completion
-  const handleSplashComplete = useCallback(() => {
-    setShowSplash(false);
-  }, []);
+
 
   // Load settings on mount
   useEffect(() => {
@@ -904,10 +900,7 @@ export default function Home() {
     setSelectedQualityPerUrl(new Map());
   }, []);
 
-  // Show splash screen while app is loading
-  if (showSplash || !appReady) {
-    return <SplashScreen onComplete={handleSplashComplete} minimumDuration={2000} />;
-  }
+
 
   return (
     <div
@@ -939,10 +932,11 @@ export default function Home() {
               });
               dismissedClipboardUrls.current.add(url);
               setOrbitingUrls((prev) => prev.filter((p) => p.url !== url));
-            }
-            if (clipboardUrl === url || clipboardUrl?.includes(url)) {
-              setClipboardUrl(null);
-              import("@tauri-apps/plugin-clipboard-manager").then(m => m.writeText("")).catch(() => {});
+              
+              if (clipboardUrl === url || clipboardUrl?.includes(url)) {
+                setClipboardUrl(null);
+                import("@tauri-apps/plugin-clipboard-manager").then(m => m.writeText("")).catch(() => {});
+              }
             }
             inputRef.current?.focus();
           }}

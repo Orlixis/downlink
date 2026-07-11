@@ -7,6 +7,7 @@ class SoundManager {
   private bounceOpenBuffer: AudioBuffer | null = null;
   private bounceExitBuffer: AudioBuffer | null = null;
   private throwBuffer: AudioBuffer | null = null;
+  private splashBuffer: AudioBuffer | null = null;
   private portalSource: AudioBufferSourceNode | null = null;
   private portalGainNode: GainNode | null = null;
 
@@ -46,17 +47,19 @@ class SoundManager {
   private async loadAudioFiles() {
     if (!this.context) return;
     try {
-      const [swooshRes, bounceOpenRes, bounceExitRes, throwRes] = await Promise.all([
+      const [swooshRes, bounceOpenRes, bounceExitRes, throwRes, splashRes] = await Promise.all([
         fetch("/sounds/portal_idle.mp3"),
         fetch("/sounds/jump-sound-open.mp3"),
         fetch("/sounds/jump-sound-exit.mp3"),
-        fetch("/sounds/download-throw-sound.mp3")
+        fetch("/sounds/download-throw-sound.mp3"),
+        fetch("/sounds/splashscreen-sound.mp3")
       ]);
       
       const swooshArray = await swooshRes.arrayBuffer();
       const bounceOpenArray = await bounceOpenRes.arrayBuffer();
       const bounceExitArray = await bounceExitRes.arrayBuffer();
       const throwArray = await throwRes.arrayBuffer();
+      const splashArray = await splashRes.arrayBuffer();
       
       // decodeAudioData doesn't always support Promise API in older Safari, but standard in modern browsers.
       this.context.decodeAudioData(swooshArray, (buffer) => {
@@ -71,6 +74,9 @@ class SoundManager {
       this.context.decodeAudioData(throwArray, (buffer) => {
         this.throwBuffer = buffer;
       });
+      this.context.decodeAudioData(splashArray, (buffer) => {
+        this.splashBuffer = buffer;
+      });
     } catch (e) {
       console.error("Failed to load audio buffers:", e);
     }
@@ -83,7 +89,19 @@ class SoundManager {
   }
 
   public playSplash() {
-    // No splash sound provided
+    if (!this.context || !this.splashBuffer) return;
+    this.init();
+
+    const source = this.context.createBufferSource();
+    source.buffer = this.splashBuffer;
+    
+    const gainNode = this.context.createGain();
+    gainNode.gain.value = 1.0;
+
+    source.connect(gainNode);
+    gainNode.connect(this.context.destination);
+    
+    source.start(0);
   }
 
   public startPortalIdle() {
