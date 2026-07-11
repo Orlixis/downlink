@@ -39,9 +39,9 @@
     --color-brand-teal: var(--brand-teal);
 }
 
-/* Fallback solid background for Windows/Linux where blur is unsupported */
+/* Fallback semi-transparent background for Windows/Linux (Allows Mica effect to show through, or provides an 85% opacity dark glass fallback over desktop) */
 html.non-mac {
-    --background: #09090b;
+    --background: rgba(9, 9, 11, 0.90);
 }
 
 /* ─── Base ──────────────────────────────────────────────── */

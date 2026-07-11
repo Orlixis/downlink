@@ -25,7 +25,10 @@
         "hiddenTitle": true,
         "transparent": true,
         "visible": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": ["mica", "blur"]
+        }
       },
       {
         "label": "splashscreen",
