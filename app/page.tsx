@@ -66,6 +66,11 @@ export default function Home() {
   // Clipboard URL banner — detected on window focus, dismissed per URL
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
   const dismissedClipboardUrls = useRef<Set<string>>(new Set());
+
+  // Multi-package orbit state
+  const [orbitingUrls, setOrbitingUrls] = useState<
+    { id: string; url: string; startX: number; startY: number }[]
+  >([]);
   // Counter-based drag tracking so dragging over child elements doesn't flicker isDragging off
   const dragCounterRef = useRef(0);
 
@@ -248,6 +253,8 @@ export default function Home() {
   // without being re-registered on every keystroke.
   const urlInputRef = useRef(urlInput);
   useEffect(() => { urlInputRef.current = urlInput; }, [urlInput]);
+  const orbitingUrlsRef = useRef(orbitingUrls);
+  useEffect(() => { orbitingUrlsRef.current = orbitingUrls; }, [orbitingUrls]);
 
   // Detect URL in clipboard when window regains focus — uses Tauri's native focus
   // event API (more reliable than browser window.focus in a webview).
@@ -261,14 +268,22 @@ export default function Home() {
         const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
         const text = await readText();
         if (!text) return;
-        const match = text.match(/https?:\/\/[^\s]+/);
-        if (!match) return;
-        const detected = match[0].replace(/[,;.]+$/, ""); // strip trailing punctuation
-        if (
-          urlInputRef.current.includes(detected) ||
-          dismissedClipboardUrls.current.has(detected)
-        ) return;
-        setClipboardUrl(detected);
+        const matches = text.match(/https?:\/\/[^\s]+/g);
+        if (!matches) return;
+        
+        const newUrls = matches
+          .map(m => m.replace(/[,;.]+$/, ""))
+          .filter(url => 
+            !urlInputRef.current.includes(url) && 
+            !dismissedClipboardUrls.current.has(url) &&
+            !orbitingUrlsRef.current.some(p => p.url === url)
+          );
+          
+        if (newUrls.length === 0) return;
+        
+        // Remove duplicates within the new array itself
+        const uniqueNewUrls = Array.from(new Set(newUrls));
+        setClipboardUrl(uniqueNewUrls.join("\n"));
       } catch {
         /* clipboard permission denied — silent */
       }
@@ -296,9 +311,11 @@ export default function Home() {
       const handleVisibility = () => {
         if (document.visibilityState === "visible") setTimeout(checkClipboard, 300);
       };
+      const handleMouseEnter = () => setTimeout(checkClipboard, 100);
       
       window.addEventListener("focus", handleFocus);
       document.addEventListener("visibilitychange", handleVisibility);
+      document.body.addEventListener("mouseenter", handleMouseEnter);
       
       // Override tauriUnlisten to also clean up DOM events
       const originalUnlisten = tauriUnlisten;
@@ -306,6 +323,7 @@ export default function Home() {
         originalUnlisten?.();
         window.removeEventListener("focus", handleFocus);
         document.removeEventListener("visibilitychange", handleVisibility);
+        document.body.removeEventListener("mouseenter", handleMouseEnter);
       };
     };
 
@@ -358,8 +376,15 @@ export default function Home() {
         e.dataTransfer?.getData("text/uri-list") ||
         "";
       if (text.includes("http")) {
-        setUrlInput(text.trim());
-        inputRef.current?.focus();
+        // Split and add to orbiting state
+        const urls = text.split(/\r?\n/).filter(line => line.trim().includes("http"));
+        const newPackages = urls.map((url) => ({
+          id: Math.random().toString(36).substring(2, 9),
+          url: url.trim(),
+          startX: e.clientX,
+          startY: e.clientY,
+        }));
+        setOrbitingUrls((prev) => [...prev, ...newPackages]);
       }
     };
 
@@ -888,29 +913,40 @@ export default function Home() {
     <div
       className="relative flex h-screen flex-col bg-transparent text-white"
     >
-      {/* Full-screen Black Hole Overlay — drag mode */}
-      {isDragging && (
-        <BlackHoleOverlay mode="drag" />
-      )}
-
-      {/* Full-screen Black Hole Overlay — clipboard mode */}
-      {clipboardUrl && (
+      {/* BlackHole Drop Zone Overlay */}
+      {(isDragging || clipboardUrl || orbitingUrls.length > 0) && (
         <BlackHoleOverlay
-          mode="clipboard"
+          mode={isDragging ? "drag" : "clipboard"}
           clipboardUrl={clipboardUrl}
-          onAbsorb={() => {
-            // Animation already faded the overlay; now wire in the URL and start preview fetch
-            setUrlInput(prev => {
-              if (!prev) return clipboardUrl;
-              if (prev.includes(clipboardUrl)) return prev;
-              return prev.trim() + "\n" + clipboardUrl;
-            });
-            dismissedClipboardUrls.current.add(clipboardUrl);
+          orbitingUrls={orbitingUrls}
+          onDropPackage={(x, y, urls) => {
+            const newPackages = urls.map((url) => ({
+              id: Math.random().toString(36).substring(2, 9),
+              url,
+              startX: x + (Math.random() * 40 - 20), // slight offset if multiple
+              startY: y + (Math.random() * 40 - 20),
+            }));
+            setOrbitingUrls((prev) => [...prev, ...newPackages]);
             setClipboardUrl(null);
+            import("@tauri-apps/plugin-clipboard-manager").then(m => m.writeText("")).catch(() => {});
+          }}
+          onAbsorb={(url) => {
+            if (url) {
+              setUrlInput((prev) => {
+                if (!prev) return url;
+                if (prev.includes(url)) return prev;
+                return prev.trim() + "\n" + url;
+              });
+              dismissedClipboardUrls.current.add(url);
+              setOrbitingUrls((prev) => prev.filter((p) => p.url !== url));
+            }
+            if (clipboardUrl === url || clipboardUrl?.includes(url)) {
+              setClipboardUrl(null);
+              import("@tauri-apps/plugin-clipboard-manager").then(m => m.writeText("")).catch(() => {});
+            }
             inputRef.current?.focus();
           }}
           onDismiss={() => {
-            dismissedClipboardUrls.current.add(clipboardUrl);
             setClipboardUrl(null);
           }}
         />
@@ -955,6 +991,10 @@ export default function Home() {
                 allPreviews={allPreviews}
                 rangeGroups={rangeGroups}
                 selectedQualitiesMap={selectedQualityPerUrl}
+                trimEnabled={trimEnabled}
+                trimStart={trimStart}
+                trimEnd={trimEnd}
+                onTrimChange={(s, e) => { setTrimStart(s); setTrimEnd(e); }}
                 onSelectQuality={(url, formatString) => {
                   setSelectedQualityPerUrl((prev) => {
                     const updated = new Map(prev);

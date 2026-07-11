@@ -7,15 +7,18 @@ import { Package } from "lucide-react";
 import { soundManager } from "../lib/SoundManager";
 import { useBlackHolePhysics } from "../hooks/useBlackHolePhysics";
 import { useGravityCursor } from "../hooks/useGravityCursor";
+import { OrbitingPackage } from "./OrbitingPackage";
 
 interface BlackHoleOverlayProps {
   mode: "drag" | "clipboard";
-  clipboardUrl?: string;
-  onAbsorb?: () => void;
+  clipboardUrl?: string | null;
+  orbitingUrls?: { id: string; url: string; startX: number; startY: number }[];
+  onDropPackage?: (x: number, y: number, urls: string[]) => void;
+  onAbsorb?: (url?: string) => void;
   onDismiss?: () => void;
 }
 
-export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: BlackHoleOverlayProps) {
+export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDropPackage, onAbsorb, onDismiss }: BlackHoleOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const coreRef = useRef<HTMLDivElement>(null);
   const urlPillRef = useRef<HTMLDivElement>(null);
@@ -28,9 +31,9 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
   const isDrag = mode === "drag";
   
   // Custom gravity cursor replaces standard pointer in clipboard mode
-  useGravityCursor(urlPillRef, coreRef, isActive && !isDrag, () => {
-    // When absorbed by gravity
-    if (!absorbedRef.current) handleAbsorb();
+  useGravityCursor(urlPillRef, coreRef, isActive && !isDrag && !!clipboardUrl, () => {
+    // When absorbed by gravity directly
+    if (clipboardUrl) handleAbsorb(clipboardUrl);
   });
 
   // ── Smooth Entrance & Reactivation ──────────────────────────────────────
@@ -48,11 +51,6 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
       
       // Fade in the 3D physics canvas
       tl.to(canvasRef.current, { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1);
-      
-      // Fade in the URL pill (physics handles the movement)
-      if (mode === "clipboard" && urlPillRef.current) {
-        tl.to(urlPillRef.current, { opacity: 1, duration: 0.5 }, 0.1);
-      }
     } else if (!isActive && !absorbedRef.current) {
       soundManager.stopPortalIdle();
       
@@ -64,11 +62,6 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
       // Fade out the 3D physics canvas
       tl.to(canvasRef.current, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0);
       
-      // Fade out the URL pill
-      if (urlPillRef.current) {
-        tl.to(urlPillRef.current, { opacity: 0, duration: 0.3 }, 0);
-      }
-      
       // Keep the overlay background visible slightly longer so the shrink animation is visible
       tl.to(overlayRef.current, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0.2);
     }
@@ -78,18 +71,33 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
     };
   }, [isActive, mode]);
 
+  // Dedicated hook for the package pill visibility so it fades in when a new link is detected
+  useGSAP(() => {
+    if (isActive && mode === "clipboard" && clipboardUrl && urlPillRef.current) {
+      gsap.to(urlPillRef.current, { opacity: 1, duration: 0.5, delay: 0.1 });
+    } else if (urlPillRef.current) {
+      gsap.to(urlPillRef.current, { opacity: 0, duration: 0.3 });
+    }
+  }, [isActive, mode, clipboardUrl]);
+
   useEffect(() => {
-    const handleDeactivate = () => setIsActive(false);
+    const handleDeactivate = () => {
+      if (orbitingUrls.length === 0) setIsActive(false);
+    };
     const handleActivate = () => {
       if (document.visibilityState === "visible") setIsActive(true);
     };
 
-    const handleMouseOut = (e: MouseEvent) => {
-      if (!e.relatedTarget) setIsActive(false);
+    const handleMouseLeave = (e: MouseEvent) => {
+      if (orbitingUrls.length > 0) return;
+      // If the mouse leaves the document completely, deactivate
+      if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+        setIsActive(false);
+      }
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") setIsActive(false);
+      if (document.visibilityState === "hidden" && orbitingUrls.length === 0) setIsActive(false);
       else setIsActive(true);
     };
 
@@ -117,19 +125,19 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("mouseout", handleMouseOut);
+    document.addEventListener("mouseleave", handleMouseLeave);
     window.addEventListener("blur", handleDeactivate);
     window.addEventListener("focus", handleActivate);
     window.addEventListener("mousemove", handleMouseMove);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("mouseout", handleMouseOut);
+      document.removeEventListener("mouseleave", handleMouseLeave);
       window.removeEventListener("blur", handleDeactivate);
       window.removeEventListener("focus", handleActivate);
       window.removeEventListener("mousemove", handleMouseMove);
     };
-  }, [isActive]);
+  }, [isActive, orbitingUrls.length]);
 
   // (Entrance animation is now handled in the isActive useGSAP block)
 
@@ -142,20 +150,43 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
   }, [mode]);
 
   // ── Absorb: pill falls into singularity ────────────────────────────────
-  const handleAbsorb = () => {
-    if (absorbedRef.current) return;
-    absorbedRef.current = true;
-    
-    soundManager.stopPortalIdle();
+  const handleAbsorb = (url?: string) => {
+    soundManager.playThrow(); // Play the blackhole sound
 
-    const tl = gsap.timeline({ onComplete: () => onAbsorb?.() });
-
-    if (urlPillRef.current) {
-      tl.to(urlPillRef.current, { opacity: 0, duration: 0.1 }, 0);
+    // Core "gulp" animation
+    if (coreRef.current) {
+      gsap.fromTo(coreRef.current, 
+        { scale: 1.2 }, 
+        { scale: 1, duration: 0.3, ease: "back.out(2)" }
+      );
     }
-    tl.to(coreRef.current, { scale: 1.5, duration: 0.15, ease: "power2.out" }, "-=0.3");
-    tl.to(coreRef.current, { scale: 0, opacity: 0, duration: 0.35, ease: "power3.in" });
-    tl.to(overlayRef.current, { opacity: 0, duration: 0.25, ease: "power2.out" }, "-=0.1");
+    
+    // Hide the tracking pill if this was the clipboardUrl
+    if (url === clipboardUrl && urlPillRef.current) {
+      gsap.to(urlPillRef.current, { opacity: 0, duration: 0.1 });
+    }
+
+    onAbsorb?.(url);
+  };
+
+  // ── Click to Drop ────────────────────────────────────────────────────────
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    // Determine if clicked on the core
+    let clickedCore = false;
+    if (coreRef.current) {
+      const rect = coreRef.current.getBoundingClientRect();
+      const dist = Math.hypot(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2));
+      if (dist < 60) {
+        clickedCore = true;
+      }
+    }
+
+    if (clipboardUrl && onDropPackage && !clickedCore) {
+      const urls = clipboardUrl.split(/\r?\n/).filter(line => line.trim().includes("http"));
+      onDropPackage(e.clientX, e.clientY, urls);
+    } else if (clipboardUrl && clickedCore) {
+      handleAbsorb(clipboardUrl);
+    }
   };
 
   // ── Dismiss: fade out ──────────────────────────────────────────────────
@@ -166,13 +197,11 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
       onComplete: () => onDismiss?.(),
     });
   };
-
   return (
     <div
       ref={overlayRef}
-      className={`absolute inset-0 z-[9999] flex flex-col items-center justify-center opacity-0 overflow-hidden ${
-        isActive && !isDrag ? "cursor-none" : ""
-      }`}
+      onPointerUp={handleOverlayClick}
+      className={`absolute inset-0 z-[9999] flex flex-col items-center justify-center opacity-0 overflow-hidden cursor-default`}
       style={{
         // Start slightly transparent — GSAP animates from 0 to 1
         // We use a high z-index to ensure it sits above everything
@@ -182,7 +211,6 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
       }}
-      onClick={isDrag ? undefined : handleDismiss}
     >
       <div className="flex flex-col items-center justify-center gap-8 pointer-events-none">
 
@@ -194,7 +222,7 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
         />
 
         {/* URL pill acts as the physical gravity cursor (clipboard mode only) */}
-        {!isDrag && (
+        {!isDrag && clipboardUrl && (
           <div
             ref={urlPillRef}
             className="absolute top-0 left-0 flex items-center justify-center h-12 w-12 rounded-xl border border-violet-400/60 bg-indigo-900/60 backdrop-blur-md z-[10000] opacity-0 shadow-[0_0_25px_rgba(139,92,246,0.5)] origin-center pointer-events-none"
@@ -204,7 +232,21 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
           </div>
         )}
 
-        {/* Black Hole Core */}
+        {/* Orbiting Packages */}
+        {typeof window !== "undefined" && orbitingUrls.map((pkg) => (
+          <OrbitingPackage
+            key={pkg.id}
+            id={pkg.id}
+            url={pkg.url}
+            startX={pkg.startX}
+            startY={pkg.startY}
+            centerX={window.innerWidth / 2}
+            centerY={window.innerHeight / 2}
+            onAbsorb={(id, url) => handleAbsorb(url)}
+          />
+        ))}
+
+        {/* Bottom instruction */}
         <div className="relative flex h-48 w-48 items-center justify-center">
 
           {/* Singularity core — clickable in clipboard mode */}

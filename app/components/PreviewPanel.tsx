@@ -20,6 +20,9 @@ import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { soundManager } from "../lib/SoundManager";
+import dynamic from "next/dynamic";
+
+const ReactPlayer = dynamic(() => import("react-player"), { ssr: false }) as any;
 
 // ─── Animated Preview Morph Wrapper ────────────────────────
 function AnimatedPreviewMorph({ 
@@ -293,6 +296,10 @@ interface PreviewPanelProps {
   selectedQualitiesMap?: Map<string, string>;
   onSelectQuality?: (url: string, formatString: string) => void;
   onSelectQualityForAll?: (formatString: string) => void;
+  trimEnabled?: boolean;
+  trimStart?: number;
+  trimEnd?: number;
+  onTrimChange?: (start: number, end: number) => void;
 }
 
 function Skeleton({ className }: { className?: string }) {
@@ -528,7 +535,19 @@ export function PreviewPanel({
   selectedQualitiesMap,
   onSelectQuality,
   onSelectQualityForAll,
+  trimEnabled,
+  trimStart,
+  trimEnd,
+  onTrimChange,
 }: PreviewPanelProps) {
+  const playerRef = useRef<any>(null);
+
+  // Sync player to trimStart when trimStart changes externally (from the slider)
+  useEffect(() => {
+    if (trimEnabled && playerRef.current && trimStart !== undefined) {
+      playerRef.current.seekTo(trimStart, "seconds");
+    }
+  }, [trimStart, trimEnabled]);
 
   const hasMultiple = allPreviews.length + rangeGroups.length > 1 || rangeGroups.length > 0;
 
@@ -601,9 +620,26 @@ export function PreviewPanel({
           </div>
         ) : previewData ? (
           <div className="flex flex-col items-center text-center w-full">
-            {/* Thumbnail */}
-            <div className="relative mb-5 h-44 w-full max-w-xs overflow-hidden rounded-xl bg-zinc-800 shadow-2xl ring-1 ring-white/5">
-              {previewData.thumbnail_url ? (
+            {/* Thumbnail or Video Player */}
+            <div className="relative mb-5 h-44 w-full max-w-xs overflow-hidden rounded-xl bg-zinc-800 shadow-2xl ring-1 ring-white/5 transition-all duration-500">
+              {trimEnabled ? (
+                <div className="absolute inset-0 bg-black">
+                  <ReactPlayer
+                    ref={playerRef}
+                    url={previewData.url}
+                    width="100%"
+                    height="100%"
+                    controls={true}
+                    playing={true}
+                    onProgress={(state: { playedSeconds: number }) => {
+                      // Optional: auto-pause if it plays past trimEnd
+                      if (trimEnd && state.playedSeconds > trimEnd) {
+                        playerRef.current?.seekTo(trimStart ?? 0, "seconds");
+                      }
+                    }}
+                  />
+                </div>
+              ) : previewData.thumbnail_url ? (
                 <Image
                   src={previewData.thumbnail_url}
                   alt={previewData.title || "Video"}
@@ -617,21 +653,21 @@ export function PreviewPanel({
                 </div>
               )}
 
-              {!previewData.is_playlist && previewData.duration_seconds && (
+              {!trimEnabled && !previewData.is_playlist && previewData.duration_seconds && (
                 <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/80 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                   <Clock className="h-3 w-3 opacity-70" />
                   {formatDuration(previewData.duration_seconds)}
                 </div>
               )}
 
-              {previewData.is_playlist && (
+              {!trimEnabled && previewData.is_playlist && (
                 <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-gradient-to-r from-blue-600 to-cyan-600 px-2 py-1 text-xs font-semibold text-white shadow">
                   <ListVideo className="h-3.5 w-3.5" />
                   {previewData.playlist_count_hint ?? "?"} videos
                 </div>
               )}
 
-              {!previewData.is_playlist && (
+              {!trimEnabled && !previewData.is_playlist && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-opacity duration-200 hover:bg-black/25 hover:opacity-100">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 shadow-lg">
                     <Play className="ml-0.5 h-5 w-5 text-zinc-900" fill="currentColor" />

@@ -49,36 +49,29 @@ export function useGravityCursor(
       const p = cursorObj.current;
       const m = mousePos.current;
 
-      // Spring force towards actual mouse
-      const k = 0.08; // Looser spring stiffness for more elasticity
-      const sx = (m.x - p.x) * k;
-      const sy = (m.y - p.y) * k;
+      // Perfect tracking of mouse before event horizon
+      if (!absorbedRef.current) {
+        p.x = m.x;
+        p.y = m.y;
+        p.vx = 0;
+        p.vy = 0;
+      }
 
-      // Gravity force towards core
       const dx = cx - p.x;
       const dy = cy - p.y;
       const dist = Math.hypot(dx, dy);
 
       // Event Horizon check
-      if (dist < 40) {
+      if (dist < 40 && !absorbedRef.current) {
         absorbedRef.current = true;
         onAbsorbed();
-        return;
       }
 
-      // Inverse-linear gravity for a much wider gravitational field
-      const G = 1500;
-      let force = G / Math.max(dist, 1);
-      
-      // Cap max force to prevent explosive teleporting
-      if (force > 50) force = 50;
-
-      const gx = (dx / dist) * force;
-      const gy = (dy / dist) * force;
-
-      // Update velocity and position
-      p.vx = (p.vx + sx + gx) * 0.85; // Slightly more glide friction
-      p.vy = (p.vy + sy + gy) * 0.85;
+      // If absorbed, pull it in visually if needed (though BlackHoleOverlay hides it)
+      if (absorbedRef.current) {
+        p.x += (cx - p.x) * 0.2;
+        p.y += (cy - p.y) * 0.2;
+      }
 
       p.x += p.vx;
       p.y += p.vy;
