@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Downlink",
-  "version": "0.1.35",
+  "version": "0.1.36",
   "identifier": "com.downlink.downlink",
   "build": {
     "frontendDist": "../out",
@@ -27,7 +27,10 @@
         "visible": false,
         "dragDropEnabled": false,
         "windowEffects": {
-          "effects": ["mica", "blur"]
+          "effects": [
+            "mica",
+            "blur"
+          ]
         }
       },
       {

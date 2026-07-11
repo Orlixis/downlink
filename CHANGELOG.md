@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.36](https://github.com/Orlixis/downlink/compare/v0.1.35...v0.1.36) (2026-07-11)
+
+
+### Features
+
+* enable mica and blur window effects and update global CSS for transparency ([edae9fb](https://github.com/Orlixis/downlink/commit/edae9fb61b46d28352fe81419bf366fc37cd586c))
+* replace react-player with vidstack for improved media handling and add trim modal support ([7f0d271](https://github.com/Orlixis/downlink/commit/7f0d271d7aac184bce97f22628041ccb5707cf22))
+
 ### [0.1.35](https://github.com/Orlixis/downlink/compare/v0.1.34...v0.1.35) (2026-07-11)
 
 ### [0.1.34](https://github.com/Orlixis/downlink/compare/v0.1.33...v0.1.34) (2026-07-11)
