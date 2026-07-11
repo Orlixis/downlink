@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.30](https://github.com/Orlixis/downlink/compare/v0.1.29...v0.1.30) (2026-07-11)
+
+
+### Features
+
+* add AI transcription support, trim slider component, and global sound management system ([932a022](https://github.com/Orlixis/downlink/commit/932a022d5b51b46ce21c5650e7f2862d38e966d7))
+
+
+### Bug Fixes
+
+* **docs:** bypass GitHub API rate limit for download links ([0b6b065](https://github.com/Orlixis/downlink/commit/0b6b065542c6dd78ef467bb92b30dbad53ba1469))
+
 ### [0.1.29](https://github.com/Orlixis/downlink/compare/v0.1.28...v0.1.29) (2026-07-10)
 
 
