@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.31](https://github.com/Orlixis/downlink/compare/v0.1.30...v0.1.31) (2026-07-11)
+
+
+### Features
+
+* update audio system with portal idle loop, custom throw sounds, and directional bounce effects ([6d0f927](https://github.com/Orlixis/downlink/commit/6d0f927d1a55ff4b2ad9c5d0425297181916e52b))
+
 ### [0.1.30](https://github.com/Orlixis/downlink/compare/v0.1.29...v0.1.30) (2026-07-11)
 
 
