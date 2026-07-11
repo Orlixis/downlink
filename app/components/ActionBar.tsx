@@ -2,7 +2,6 @@
 
 import { Download, Captions, Scissors, Loader2, Database, ClapperboardIcon } from "lucide-react";
 import type { PresetWithHint } from "../types";
-import { TrimSlider } from "./TrimSlider";
 
 interface ActionBarProps {
   presetId: string;
@@ -57,17 +56,6 @@ export function ActionBar({
 
   return (
     <div className="border-t border-zinc-800/80 bg-transparent">
-      {/* Trim slider panel — visible when trim is enabled */}
-      {trimEnabled && canTrim && (
-        <div className="border-b border-zinc-800/60 px-3 pt-2 pb-1">
-          <TrimSlider
-            duration={duration}
-            start={trimStart}
-            end={trimEnd}
-            onChange={onTrimChange}
-          />
-        </div>
-      )}
 
       <div className="flex items-center gap-2 px-3 py-2.5">
         {/* ── Toggle buttons ─────────────────────────── */}
@@ -107,6 +95,7 @@ export function ActionBar({
           {/* Trim toggle — only shown when a single video with duration is previewed */}
           {canTrim && (
             <button
+              id="trim-icon"
               type="button"
               onClick={onTrimToggle}
               title="Trim clip — select a start and end time to download only that segment"
@@ -118,7 +107,7 @@ export function ActionBar({
               }`}
             >
               <ClapperboardIcon className="h-3.5 w-3.5 flex-shrink-0" />
-              <span>Trim Clip</span>
+              <span>Trim</span>
             </button>
           )}
 

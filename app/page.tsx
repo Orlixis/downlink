@@ -12,6 +12,7 @@ import { DownloadQueue } from "./components/DownloadQueue";
 import { Footer } from "./components/Footer";
 import { ResizableDivider } from "./components/ResizableDivider";
 import { UpdateModal } from "./components/UpdateModal";
+import { TrimModal } from "./components/TrimModal";
 import { BlackHoleOverlay } from "./components/BlackHoleOverlay";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
@@ -44,6 +45,7 @@ export default function Home() {
   const [trimEnabled, setTrimEnabled] = useState(false);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
+  const [isTrimModalOpen, setIsTrimModalOpen] = useState(false);
   // Metadata embed state
   const [embedMetaEnabled, setEmbedMetaEnabled] = useState(false);
 
@@ -1016,7 +1018,7 @@ export default function Home() {
               sponsorBlockEnabled={sponsorBlockEnabled}
               onSponsorBlockToggle={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
               trimEnabled={trimEnabled}
-              onTrimToggle={() => setTrimEnabled(!trimEnabled)}
+              onTrimToggle={() => trimEnabled ? setTrimEnabled(false) : setIsTrimModalOpen(true)}
               trimStart={trimStart}
               trimEnd={trimEnd}
               onTrimChange={(s, e) => { setTrimStart(s); setTrimEnd(e); }}
@@ -1084,6 +1086,23 @@ export default function Home() {
         updateState={downlink.updateAvailable}
         installAppUpdate={downlink.installAppUpdate}
         restartApp={downlink.restartApp}
+      />
+
+      {/* Trim Modal */}
+      <TrimModal
+        isOpen={isTrimModalOpen}
+        onClose={() => setIsTrimModalOpen(false)}
+        previewUrl={allPreviews[0]?.url || previewData?.url || ""}
+        streamUrl={previewData?.stream_url || previewData?.url || ""}
+        thumbnailUrl={previewData?.thumbnail_url ?? undefined}
+        duration={previewDuration}
+        initialStart={trimStart}
+        initialEnd={trimEnd}
+        onSave={(start, end) => {
+          setTrimStart(start);
+          setTrimEnd(end);
+          setTrimEnabled(true);
+        }}
       />
 
       {/* Playlist Dialog */}

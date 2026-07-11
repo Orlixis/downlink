@@ -1083,6 +1083,8 @@ async fn execute_download(
     let merge_re = Regex::new(r"\[Merger\]|Merging formats|\[ffmpeg\]").ok();
     let dest_re = Regex::new(r#"\[download\] Destination: (.+)"#).ok();
     let already_re = Regex::new(r#"\[download\] (.+) has already been downloaded"#).ok();
+    let merge_dest_re = Regex::new(r#"Merging formats into "([^"]+)""#).ok();
+    let move_dest_re = Regex::new(r#"Moving file(?:.*?) to "([^"]+)""#).ok();
     let finished_re = Regex::new(r#"\[download\] 100%"#).ok();
 
     loop {
@@ -1223,6 +1225,18 @@ async fn execute_download(
 
                         // Capture destination path
                         if let Some(ref re) = dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+
+                        // Capture post-processing destination paths (e.g. Merging, Moving)
+                        if let Some(ref re) = merge_dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+                        if let Some(ref re) = move_dest_re {
                             if let Some(caps) = re.captures(&l) {
                                 final_path = caps.get(1).map(|m| m.as_str().to_string());
                             }

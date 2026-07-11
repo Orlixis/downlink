@@ -7,6 +7,7 @@ interface TrimSliderProps {
   start: number;    // trim start in seconds
   end: number;      // trim end in seconds
   onChange: (start: number, end: number) => void;
+  thumbnailUrl?: string; // For CapCut style filmstrip
 }
 
 function formatTime(seconds: number): string {
@@ -19,11 +20,13 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) {
+export function TrimSlider({ duration, start, end, onChange, thumbnailUrl }: TrimSliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const startThumbRef = useRef<HTMLDivElement>(null);
   const endThumbRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef<"start" | "end" | null>(null);
+  const draggingRef = useRef<"start" | "end" | "center" | null>(null);
+  const dragStartRef = useRef<{ clientX: number; start: number; end: number } | null>(null);
+  const wasDraggingRef = useRef(false);
 
   const startPct = duration > 0 ? (start / duration) * 100 : 0;
   const endPct = duration > 0 ? (end / duration) * 100 : 100;
@@ -43,23 +46,55 @@ export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) 
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!draggingRef.current) return;
-      const pct = getPctFromEvent(e.clientX);
+      if (!draggingRef.current || !dragStartRef.current || !trackRef.current) return;
+      
+      const rect = trackRef.current.getBoundingClientRect();
+      const pct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
       const seconds = pct * duration;
 
+      // All branches use the snapshot from drag-start to avoid stale closures
+      const snap = dragStartRef.current;
+
       if (draggingRef.current === "start") {
-        const newStart = clamp(seconds, 0, end - 1);
-        onChange(Math.round(newStart * 10) / 10, end);
-      } else {
-        const newEnd = clamp(seconds, start + 1, duration);
-        onChange(start, Math.round(newEnd * 10) / 10);
+        // Clamp so start can't pass the snapshotted end
+        const newStart = clamp(seconds, 0, snap.end - 1);
+        onChange(Math.round(newStart * 10) / 10, snap.end);
+      } else if (draggingRef.current === "end") {
+        // Clamp so end can't pass the snapshotted start
+        const newEnd = clamp(seconds, snap.start + 1, duration);
+        onChange(snap.start, Math.round(newEnd * 10) / 10);
+      } else if (draggingRef.current === "center") {
+        const deltaX = e.clientX - snap.clientX;
+        const deltaSec = (deltaX / rect.width) * duration;
+        
+        const windowSize = snap.end - snap.start;
+        let newStart = snap.start + deltaSec;
+        let newEnd = snap.end + deltaSec;
+        
+        if (newStart < 0) {
+          newStart = 0;
+          newEnd = windowSize;
+        } else if (newEnd > duration) {
+          newEnd = duration;
+          newStart = duration - windowSize;
+        }
+        
+        onChange(Math.round(newStart * 10) / 10, Math.round(newEnd * 10) / 10);
       }
     },
-    [draggingRef, getPctFromEvent, duration, start, end, onChange]
+    [duration, onChange]
   );
 
   const handleMouseUp = useCallback(() => {
+    if (draggingRef.current) {
+      wasDraggingRef.current = true;
+      // Reset the flag after a tick so the click event is suppressed
+      requestAnimationFrame(() => {
+        wasDraggingRef.current = false;
+      });
+    }
     draggingRef.current = null;
+    dragStartRef.current = null;
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
   }, []);
@@ -73,10 +108,12 @@ export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) 
     };
   }, [handleMouseMove, handleMouseUp]);
 
-  const startDrag = (handle: "start" | "end") => (e: React.MouseEvent) => {
+  const startDrag = (handle: "start" | "end" | "center") => (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     draggingRef.current = handle;
-    document.body.style.cursor = "grabbing";
+    dragStartRef.current = { clientX: e.clientX, start, end };
+    document.body.style.cursor = handle === "center" ? "grabbing" : "ew-resize";
     document.body.style.userSelect = "none";
   };
 
@@ -92,9 +129,9 @@ export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) 
     }
   };
 
-  // Click on track to set nearest handle
+  // Click on track to set nearest handle — suppressed after any drag
   const handleTrackClick = (e: React.MouseEvent) => {
-    if (draggingRef.current) return;
+    if (wasDraggingRef.current) return;
     const pct = getPctFromEvent(e.clientX);
     const seconds = pct * duration;
     const distStart = Math.abs(seconds - start);
@@ -112,7 +149,7 @@ export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) 
       <div className="flex items-center justify-between mb-2.5 px-0.5">
         <div className="flex items-center gap-1">
           <span className="text-[9px] font-semibold uppercase tracking-widest text-zinc-500">Start</span>
-          <span className="rounded-md bg-violet-600/20 px-2 py-0.5 text-[11px] font-mono font-semibold text-violet-300 ring-1 ring-violet-500/30 tabular-nums">
+          <span className="rounded-md bg-blue-600/20 px-2 py-0.5 text-[11px] font-mono font-semibold text-blue-300 ring-1 ring-blue-500/30 tabular-nums">
             {formatTime(start)}
           </span>
         </div>
@@ -124,73 +161,93 @@ export function TrimSlider({ duration, start, end, onChange }: TrimSliderProps) 
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="rounded-md bg-violet-600/20 px-2 py-0.5 text-[11px] font-mono font-semibold text-violet-300 ring-1 ring-violet-500/30 tabular-nums">
+          <span className="rounded-md bg-blue-600/20 px-2 py-0.5 text-[11px] font-mono font-semibold text-blue-300 ring-1 ring-blue-500/30 tabular-nums">
             {formatTime(end)}
           </span>
           <span className="text-[9px] font-semibold uppercase tracking-widest text-zinc-500">End</span>
         </div>
       </div>
 
-      {/* Track */}
+      {/* Track (Thick Filmstrip Style) */}
       <div
         ref={trackRef}
         onClick={handleTrackClick}
-        className="relative h-[5px] rounded-full bg-zinc-800 cursor-pointer"
-        style={{ margin: "0 8px" }}
+        className="relative h-14 rounded-lg bg-zinc-800 cursor-pointer overflow-hidden ring-1 ring-white/10"
+        style={{ margin: "0 12px" }}
         role="presentation"
       >
-        {/* Unselected region glow (left) */}
+        {/* Filmstrip Background */}
+        {thumbnailUrl && (
+          <div
+            className="absolute inset-0 opacity-80"
+            style={{
+              backgroundImage: `url(${thumbnailUrl})`,
+              backgroundSize: "auto 100%",
+              backgroundRepeat: "repeat-x",
+              backgroundPosition: "left center",
+            }}
+          />
+        )}
+
+        {/* Unselected region (left) - darkened */}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-zinc-700/60"
+          className="absolute inset-y-0 left-0 bg-black/70 backdrop-blur-[1px]"
           style={{ width: `${startPct}%` }}
         />
-        {/* Selected region */}
+
+        {/* Unselected region (right) - darkened */}
         <div
-          className="absolute inset-y-0 rounded-full bg-gradient-to-r from-violet-600 to-violet-400"
-          style={{
-            left: `${startPct}%`,
-            width: `${endPct - startPct}%`,
-            boxShadow: "0 0 8px rgba(139,92,246,0.5)",
-          }}
-        />
-        {/* Unselected region (right) */}
-        <div
-          className="absolute inset-y-0 right-0 rounded-full bg-zinc-700/60"
+          className="absolute inset-y-0 right-0 bg-black/70 backdrop-blur-[1px]"
           style={{ width: `${100 - endPct}%` }}
         />
 
-        {/* Start thumb */}
+        {/* Selected Region Border Wrapper (Center Area) */}
+        <div
+          className="absolute inset-y-0 cursor-grab active:cursor-grabbing hover:bg-white/10 transition-colors"
+          onMouseDown={startDrag("center")}
+          style={{
+            left: `${startPct}%`,
+            width: `${endPct - startPct}%`,
+          }}
+        >
+          {/* Top/Bottom active border */}
+          <div className="absolute inset-x-0 top-0 h-1 bg-blue-500 pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-blue-500 pointer-events-none" />
+          
+          {/* Light overlay for selected part */}
+          <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
+        </div>
+
+        {/* Start Handle */}
         <div
           ref={startThumbRef}
           role="slider"
-          aria-valuemin={0}
-          aria-valuemax={Math.round(end - 1)}
-          aria-valuenow={Math.round(start)}
-          aria-label="Trim start"
           tabIndex={0}
+          aria-valuenow={start}
+          aria-valuemin={0}
+          aria-valuemax={end}
           onMouseDown={startDrag("start")}
           onKeyDown={handleKeyDown("start")}
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex h-4 w-4 cursor-grab items-center justify-center rounded-full bg-violet-500 ring-2 ring-violet-300/40 shadow-lg shadow-violet-900/50 transition-transform hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 focus:ring-offset-zinc-900"
+          className="absolute inset-y-0 flex items-center justify-center w-4 -ml-2 cursor-ew-resize bg-blue-500 rounded-l-md hover:bg-blue-400 focus:outline-none focus:ring-2 focus:ring-white/50 group"
           style={{ left: `${startPct}%` }}
         >
-          <div className="h-1 w-[2px] rounded-full bg-white/70" />
+          <div className="w-1 h-4 rounded-full bg-blue-900/40 group-hover:bg-blue-900/60" />
         </div>
 
-        {/* End thumb */}
+        {/* End Handle */}
         <div
           ref={endThumbRef}
           role="slider"
-          aria-valuemin={Math.round(start + 1)}
-          aria-valuemax={Math.round(duration)}
-          aria-valuenow={Math.round(end)}
-          aria-label="Trim end"
           tabIndex={0}
+          aria-valuenow={end}
+          aria-valuemin={start}
+          aria-valuemax={duration}
           onMouseDown={startDrag("end")}
           onKeyDown={handleKeyDown("end")}
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex h-4 w-4 cursor-grab items-center justify-center rounded-full bg-violet-500 ring-2 ring-violet-300/40 shadow-lg shadow-violet-900/50 transition-transform hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 focus:ring-offset-zinc-900"
-          style={{ left: `${endPct}%` }}
+          className="absolute inset-y-0 flex items-center justify-center w-4 -mr-2 cursor-ew-resize bg-blue-500 rounded-r-md hover:bg-blue-400 focus:outline-none focus:ring-2 focus:ring-white/50 group"
+          style={{ right: `${100 - endPct}%` }}
         >
-          <div className="h-1 w-[2px] rounded-full bg-white/70" />
+          <div className="w-1 h-4 rounded-full bg-blue-900/40 group-hover:bg-blue-900/60" />
         </div>
       </div>
 

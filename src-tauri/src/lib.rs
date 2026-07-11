@@ -270,6 +270,7 @@ pub struct FetchMetadataOptions {
 pub struct FetchMetadataResult {
     id: Uuid,
     url: String,
+    stream_url: Option<String>,
     is_playlist: bool,
     title: Option<String>,
     uploader: Option<String>,
@@ -446,6 +447,7 @@ async fn fetch_metadata(
     let result = FetchMetadataResult {
         id: Uuid::nil(),
         url: meta.url,
+        stream_url: meta.stream_url,
         is_playlist: meta.is_playlist,
         title: meta.title,
         uploader: meta.uploader,
@@ -510,6 +512,7 @@ async fn fast_fetch_metadata(
             let result = FetchMetadataResult {
                 id: Uuid::nil(),
                 url: meta.url,
+                stream_url: meta.stream_url,
                 is_playlist: meta.is_playlist,
                 title: meta.title,
                 uploader: meta.uploader,

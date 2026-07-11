@@ -42,6 +42,7 @@ impl YtDlpConfig {
 #[derive(Debug, Clone)]
 pub struct PreviewMetadata {
     pub url: String,
+    pub stream_url: Option<String>,
     pub title: Option<String>,
     pub uploader: Option<String>,
     pub duration_seconds: Option<u64>,
@@ -194,6 +195,7 @@ impl YtDlpRunner {
 
             return Ok(Some(PreviewMetadata {
                 url: resolved_url,
+                stream_url: None,
                 title,
                 uploader,
                 duration_seconds,
@@ -560,6 +562,19 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
         .unwrap_or(fallback_url)
         .to_string();
 
+    let stream_url = v
+        .get("url")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            v.get("requested_formats")
+                .and_then(|x| x.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|f| f.get("url"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        });
+
     let title = v
         .get("title")
         .and_then(|x| x.as_str())
@@ -626,6 +641,7 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
 
     Ok(PreviewMetadata {
         url: webpage_url,
+        stream_url,
         title,
         uploader,
         duration_seconds,

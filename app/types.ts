@@ -88,8 +88,9 @@ export interface FetchMetadataOptions {
 
 // Fetch metadata result
 export interface FetchMetadataResult {
-  id: string;
+  id: string; // Uuid
   url: string;
+  stream_url?: string | null;
   is_playlist: boolean;
   title: string | null;
   uploader: string | null;

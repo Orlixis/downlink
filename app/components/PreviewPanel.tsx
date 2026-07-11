@@ -16,13 +16,14 @@ import {
 } from "lucide-react";
 import type { FetchMetadataResult, UrlPreviewItem, VideoQualityOption } from "../types";
 import { formatBytes, formatDuration } from "../types";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { soundManager } from "../lib/SoundManager";
-import dynamic from "next/dynamic";
-
-const ReactPlayer = dynamic(() => import("react-player"), { ssr: false }) as any;
+import { MediaPlayer, MediaProvider, type MediaPlayerInstance } from '@vidstack/react';
+import { DefaultVideoLayout, defaultLayoutIcons } from '@vidstack/react/player/layouts/default';
+import '@vidstack/react/player/styles/default/theme.css';
+import '@vidstack/react/player/styles/default/layouts/video.css';
 
 // ─── Animated Preview Morph Wrapper ────────────────────────
 function AnimatedPreviewMorph({ 
@@ -540,14 +541,25 @@ export function PreviewPanel({
   trimEnd,
   onTrimChange,
 }: PreviewPanelProps) {
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<MediaPlayerInstance>(null);
+
+  // Delay playback state
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Reset playback state if trim is disabled
+  useEffect(() => {
+    if (!trimEnabled) setIsPlaying(false);
+  }, [trimEnabled]);
 
   // Sync player to trimStart when trimStart changes externally (from the slider)
   useEffect(() => {
     if (trimEnabled && playerRef.current && trimStart !== undefined) {
-      playerRef.current.seekTo(trimStart, "seconds");
+      try {
+        playerRef.current.currentTime = trimStart;
+      } catch (e) {}
     }
   }, [trimStart, trimEnabled]);
+
 
   const hasMultiple = allPreviews.length + rangeGroups.length > 1 || rangeGroups.length > 0;
 
@@ -621,23 +633,33 @@ export function PreviewPanel({
         ) : previewData ? (
           <div className="flex flex-col items-center text-center w-full">
             {/* Thumbnail or Video Player */}
-            <div className="relative mb-5 h-44 w-full max-w-xs overflow-hidden rounded-xl bg-zinc-800 shadow-2xl ring-1 ring-white/5 transition-all duration-500">
-              {trimEnabled ? (
-                <div className="absolute inset-0 bg-black">
-                  <ReactPlayer
+            <div 
+              className="group relative mb-4 w-full mx-auto overflow-hidden rounded-2xl bg-black ring-1 ring-white/10" 
+              style={{ 
+                aspectRatio: (allPreviews[0]?.url || previewData.url || "").includes("/shorts/") ? "9/16" : "16/9", 
+                maxWidth: (allPreviews[0]?.url || previewData.url || "").includes("/shorts/") ? "225px" : "100%" 
+              }}
+            >
+              {trimEnabled && previewData.url ? (
+                <div className="absolute inset-0 z-10 w-full h-full bg-black">
+                  <MediaPlayer
                     ref={playerRef}
-                    url={previewData.url}
-                    width="100%"
-                    height="100%"
-                    controls={true}
-                    playing={true}
-                    onProgress={(state: { playedSeconds: number }) => {
-                      // Optional: auto-pause if it plays past trimEnd
-                      if (trimEnd && state.playedSeconds > trimEnd) {
-                        playerRef.current?.seekTo(trimStart ?? 0, "seconds");
+                    src={previewData.stream_url || previewData.url}
+                    autoPlay={true}
+                    muted={true}
+                    onTimeUpdate={(e: any) => {
+                      if (trimEnd && e.detail > trimEnd) {
+                        try {
+                          if (playerRef.current) playerRef.current.currentTime = trimStart ?? 0;
+                        } catch (e) {}
                       }
                     }}
-                  />
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    className="w-full h-full"
+                  >
+                    <MediaProvider />
+                  </MediaPlayer>
                 </div>
               ) : previewData.thumbnail_url ? (
                 <Image
