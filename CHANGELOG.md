@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.32](https://github.com/Orlixis/downlink/compare/v0.1.31...v0.1.32) (2026-07-11)
+
+
+### Features
+
+* implement Black Hole particle physics simulation using Canvas API and custom hook ([5486a87](https://github.com/Orlixis/downlink/commit/5486a877decffad6daac5f21c84a9f46041f7dd6))
+
 ### [0.1.31](https://github.com/Orlixis/downlink/compare/v0.1.30...v0.1.31) (2026-07-11)
 
 
