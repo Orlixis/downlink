@@ -24,6 +24,7 @@ mod models;
 mod settings;
 mod tool_manager;
 mod url_utils;
+mod whisper;
 mod ytdlp;
 
 use download_manager::{DownloadConfig, DownloadManager, Preset};
@@ -1331,11 +1332,55 @@ async fn proxy_oembed_request(endpoint_url: String) -> Result<Option<RawOEmbed>,
     let res = client.get(&endpoint_url).send().await.map_err(|e| e.to_string())?;
     
     if !res.status().is_success() {
-        return Ok(None);
+        return Err(format!("Request failed with status: {}", res.status()));
     }
     
     let data: RawOEmbed = res.json().await.map_err(|e| e.to_string())?;
     Ok(Some(data))
+}
+
+
+// ============================================================================
+// Tauri Commands — AI Transcription
+// ============================================================================
+
+/// Check if whisper is available on this system.
+/// Returns the binary path as a string, or an empty string if not found.
+#[tauri::command]
+fn check_whisper() -> String {
+    whisper::check_whisper().unwrap_or_default()
+}
+
+/// Transcribe a completed download file.
+/// Priority: user's provider+key → bundled Groq key → local whisper.
+#[tauri::command]
+async fn transcribe_file(
+    state: State<'_, AppState>,
+    file_path: String,
+    model: Option<whisper::WhisperModel>,
+) -> Result<whisper::TranscriptionResult, String> {
+    let path = std::path::PathBuf::from(&file_path);
+    let model = model.unwrap_or(whisper::WhisperModel::Base);
+
+    let (user_key, provider) = {
+        let db_guard = state.db.lock().await;
+        let settings_manager = settings::SettingsManager::new(db_guard.conn());
+        match settings_manager.get_user_settings() {
+            Ok(s) => {
+                let key = s.transcription.api_key.trim().to_string();
+                let key = if key.is_empty() { None } else { Some(key) };
+                (key, s.transcription.provider)
+            }
+            Err(_) => (None, settings::TranscriptionProvider::Groq),
+        }
+    };
+
+    whisper::transcribe(&path, model, user_key.as_deref(), &provider)
+        .await
+        .map_err(|e| {
+            let kind = serde_json::to_string(&e.kind).unwrap_or_default();
+            format!("{kind}: {}", e.message)
+        })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1505,6 +1550,9 @@ pub fn run() {
             // Fast preview
             fast_fetch_metadata,
             proxy_oembed_request,
+            // AI Transcription
+            check_whisper,
+            transcribe_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

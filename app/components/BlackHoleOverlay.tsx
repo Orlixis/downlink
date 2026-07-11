@@ -4,6 +4,7 @@ import { useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Link } from "lucide-react";
+import { soundManager } from "../lib/SoundManager";
 
 interface BlackHoleOverlayProps {
   mode: "drag" | "clipboard";
@@ -26,6 +27,8 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
 
   // ── Entrance animation ──────────────────────────────────────────────────
   useGSAP(() => {
+    soundManager.playSwoosh();
+    
     // Overlay itself: fade in from transparent (start is visible via CSS — GSAP just animates)
     gsap.fromTo(overlayRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" });
 
@@ -73,6 +76,8 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
   const handleAbsorb = () => {
     if (absorbedRef.current) return;
     absorbedRef.current = true;
+    
+    soundManager.playSwoosh();
 
     const tl = gsap.timeline({ onComplete: () => onAbsorb?.() });
 

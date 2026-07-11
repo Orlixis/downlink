@@ -24,7 +24,7 @@ const PROVIDERS: OEmbedProvider[] = [
   {
     endpoint(url) {
       if (
-        /youtube\.com\/(watch|shorts|live)/i.test(url) ||
+        /youtube\.com\/(watch|shorts|live|playlist)/i.test(url) ||
         /youtu\.be\//i.test(url)
       ) {
         return `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
@@ -131,10 +131,12 @@ export async function tryOEmbedPreview(
 
     if (!data || !data.title) return null;
 
+    const is_playlist = url.includes("list=") || url.includes("/playlist");
+
     return {
       id: "00000000-0000-0000-0000-000000000000", // placeholder, same as UUID::nil()
       url,
-      is_playlist: false,
+      is_playlist,
       title: data.title ?? null,
       uploader: data.author_name ?? null,
       duration_seconds: data.duration ?? null,

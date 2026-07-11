@@ -341,17 +341,23 @@ impl YtDlpRunner {
         let mut all_lines: Vec<String> = Vec::new();
         let mut stderr_lines: Vec<String> = Vec::new();
 
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+
         let read_task = async {
             loop {
+                if stdout_done && stderr_done {
+                    break;
+                }
                 tokio::select! {
-                    line = stdout_reader.next_line() => match line {
+                    line = stdout_reader.next_line(), if !stdout_done => match line {
                         Ok(Some(l)) => { all_lines.push(l); }
-                        Ok(None) => break,
+                        Ok(None) => stdout_done = true,
                         Err(e) => return Err(anyhow!("stdout read error: {e}")),
                     },
-                    line = stderr_reader.next_line() => match line {
+                    line = stderr_reader.next_line(), if !stderr_done => match line {
                         Ok(Some(l)) => { if stderr_lines.len() < 500 { stderr_lines.push(l); } }
-                        Ok(None) => {}
+                        Ok(None) => stderr_done = true,
                         Err(e) => return Err(anyhow!("stderr read error: {e}")),
                     },
                 }
@@ -442,13 +448,18 @@ impl YtDlpRunner {
         let mut stdout_lines: Vec<String> = Vec::new();
         let mut stderr_lines: Vec<String> = Vec::new();
         let mut json_lines: Vec<String> = Vec::new();
+        let mut stdout_done = false;
+        let mut stderr_done = false;
 
         // Read concurrently-ish in a simple loop. This is fine for metadata sized output.
         // If it becomes a perf issue, we can select over streams.
         let read_task = async {
             loop {
+                if stdout_done && stderr_done {
+                    break;
+                }
                 tokio::select! {
-                    line = stdout_reader.next_line() => {
+                    line = stdout_reader.next_line(), if !stdout_done => {
                         match line {
                             Ok(Some(l)) => {
                                 if stdout_lines.len() < MAX_STDOUT_LINES {
@@ -459,21 +470,18 @@ impl YtDlpRunner {
                                     json_lines.push(l);
                                 }
                             }
-                            Ok(None) => break,
+                            Ok(None) => stdout_done = true,
                             Err(e) => return Err(anyhow!("error reading yt-dlp stdout: {e}")),
                         }
                     }
-                    line = stderr_reader.next_line() => {
+                    line = stderr_reader.next_line(), if !stderr_done => {
                         match line {
                             Ok(Some(l)) => {
                                 if stderr_lines.len() < MAX_STDERR_LINES {
                                     stderr_lines.push(l);
                                 }
                             }
-                            Ok(None) => {
-                                // don't break; stdout might still have data
-                                // We'll break when stdout closes and process exits.
-                            }
+                            Ok(None) => stderr_done = true,
                             Err(e) => return Err(anyhow!("error reading yt-dlp stderr: {e}")),
                         }
                     }
@@ -757,7 +765,15 @@ fn parse_playlist_entry(json_line: &str, playlist_url: &str) -> Result<PlaylistE
     let thumbnail_url = v
         .get("thumbnail")
         .and_then(|x| x.as_str())
-        .map(|s| s.to_string());
+        .map(|s| s.to_string())
+        .or_else(|| {
+            v.get("thumbnails")
+                .and_then(|t| t.as_array())
+                .and_then(|arr| arr.last())
+                .and_then(|t| t.get("url"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        });
 
     // Prefer `webpage_url` if present.
     if let Some(u) = v.get("webpage_url").and_then(|x| x.as_str()) {

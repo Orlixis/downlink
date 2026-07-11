@@ -41,6 +41,12 @@ export default function Home() {
   const [presetId, setPresetId] = useState<string>(DEFAULT_PRESET_ID);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
   const [sponsorBlockEnabled, setSponsorBlockEnabled] = useState(false);
+  // Trim state
+  const [trimEnabled, setTrimEnabled] = useState(false);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  // Metadata embed state
+  const [embedMetaEnabled, setEmbedMetaEnabled] = useState(false);
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -166,6 +172,17 @@ export default function Home() {
   // Spinner shows while ANY non-range URL is still loading
   const previewLoading = allPreviews.some((p) => p.loading);
 
+  // Duration from preview (seconds) — drives trim slider range
+  const previewDuration = previewData?.duration_seconds ?? 0;
+
+  // Reset trim range when preview duration becomes known or URL changes
+  useEffect(() => {
+    if (previewDuration > 0) {
+      setTrimStart(0);
+      setTrimEnd(previewDuration);
+    }
+  }, [previewDuration]);
+
   // Auto-open update modal when download finishes
   useEffect(() => {
     if (downlink.updateAvailable.readyToInstall) {
@@ -266,18 +283,30 @@ export default function Home() {
         const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
           if (focused) {
             // Small delay so the OS clipboard is fully updated before we read it
-            setTimeout(checkClipboard, 100);
+            setTimeout(checkClipboard, 300);
           }
         });
         tauriUnlisten = unlisten;
       } catch {
-        // Fallback: use browser visibilitychange if Tauri API import fails
-        const handleVisibility = () => {
-          if (document.visibilityState === "visible") checkClipboard();
-        };
-        document.addEventListener("visibilitychange", handleVisibility);
-        tauriUnlisten = () => document.removeEventListener("visibilitychange", handleVisibility);
+        // Silent fallback
       }
+      
+      // Also attach to standard DOM events as a reliable fallback for webviews
+      const handleFocus = () => setTimeout(checkClipboard, 300);
+      const handleVisibility = () => {
+        if (document.visibilityState === "visible") setTimeout(checkClipboard, 300);
+      };
+      
+      window.addEventListener("focus", handleFocus);
+      document.addEventListener("visibilitychange", handleVisibility);
+      
+      // Override tauriUnlisten to also clean up DOM events
+      const originalUnlisten = tauriUnlisten;
+      tauriUnlisten = () => {
+        originalUnlisten?.();
+        window.removeEventListener("focus", handleFocus);
+        document.removeEventListener("visibilitychange", handleVisibility);
+      };
     };
 
     setup();
@@ -646,8 +675,16 @@ export default function Home() {
 
         let hasAnyIds = false;
         for (const [groupPreset, groupUrls] of qualityGroups) {
+          // Encode trim and meta flags into preset suffix (avoids DB schema change)
+          let effectivePreset = groupPreset;
+          if (trimEnabled && previewDuration > 0 && !previewData?.is_playlist) {
+            effectivePreset += `+trim:${trimStart.toFixed(1)}-${trimEnd.toFixed(1)}`;
+          }
+          if (embedMetaEnabled) {
+            effectivePreset += "+meta";
+          }
           const result = await downlink.addUrls(groupUrls.join("\n"), {
-            preset_id: groupPreset,
+            preset_id: effectivePreset,
             output_dir: destination,
             parent_id: null,
             source_kind: "single",
@@ -770,11 +807,14 @@ export default function Home() {
     } catch (e) {
       console.error("Failed to handle playlist:", e);
     } finally {
-      setIsAnimatingOut(false);
       setIsSubmitting(false);
-      setPlaylistDialogOpen(false);
-      setPlaylistDialogData(null);
-      setPlaylistVideos([]);
+      // Wait an extra 200ms to guarantee the modal's GSAP exit animation finishes before unmounting
+      setTimeout(() => {
+        setIsAnimatingOut(false);
+        setPlaylistDialogOpen(false);
+        setPlaylistDialogData(null);
+        setPlaylistVideos([]);
+      }, 200);
     }
   }, [playlistDialogData, playlistVideos, downlink, presetId, destination, settings]);
 
@@ -860,7 +900,11 @@ export default function Home() {
           clipboardUrl={clipboardUrl}
           onAbsorb={() => {
             // Animation already faded the overlay; now wire in the URL and start preview fetch
-            setUrlInput(clipboardUrl);
+            setUrlInput(prev => {
+              if (!prev) return clipboardUrl;
+              if (prev.includes(clipboardUrl)) return prev;
+              return prev.trim() + "\n" + clipboardUrl;
+            });
             dismissedClipboardUrls.current.add(clipboardUrl);
             setClipboardUrl(null);
             inputRef.current?.focus();
@@ -937,6 +981,14 @@ export default function Home() {
               onSubtitlesToggle={() => setSubtitlesEnabled(!subtitlesEnabled)}
               sponsorBlockEnabled={sponsorBlockEnabled}
               onSponsorBlockToggle={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
+              trimEnabled={trimEnabled}
+              onTrimToggle={() => setTrimEnabled(!trimEnabled)}
+              trimStart={trimStart}
+              trimEnd={trimEnd}
+              onTrimChange={(s, e) => { setTrimStart(s); setTrimEnd(e); }}
+              duration={previewDuration}
+              embedMetaEnabled={embedMetaEnabled}
+              onEmbedMetaToggle={() => setEmbedMetaEnabled(!embedMetaEnabled)}
               onDownload={handleDownload}
               isSubmitting={isSubmitting}
               isPlaylist={previewData?.is_playlist ?? false}
@@ -965,6 +1017,7 @@ export default function Home() {
           onOpenFolder={downlink.openFolder}
           onClearQueue={downlink.clearQueue}
           onClearHistory={downlink.clearHistory}
+          onTranscribe={downlink.transcribeFile}
         />
         </div>
       </div>
@@ -1003,6 +1056,7 @@ export default function Home() {
       {playlistDialogData && (
         <PlaylistDialog
           isOpen={playlistDialogOpen}
+          isExiting={isAnimatingOut}
           onClose={() => {
             setPlaylistDialogOpen(false);
             setPlaylistVideos([]);

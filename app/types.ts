@@ -161,6 +161,7 @@ export interface UserSettings {
   updates: UpdateSettings;
   privacy: PrivacySettings;
   network: NetworkSettings;
+  transcription: TranscriptionSettings;
 }
 
 export interface GeneralSettings {
@@ -223,6 +224,19 @@ export interface NetworkSettings {
   retries: number;
   concurrent_fragments: number;
   socket_timeout: number;
+}
+
+export type TranscriptionProvider = "groq" | "open_a_i" | "gemini";
+
+export const TRANSCRIPTION_PROVIDERS: { id: TranscriptionProvider; label: string; note: string; keyLabel: string; keyLink: string }[] = [
+  { id: "groq",   label: "Groq (Free)",    note: "Fast, free tier · Whisper large-v3", keyLabel: "console.groq.com → API Keys",             keyLink: "https://console.groq.com/keys" },
+  { id: "open_a_i", label: "OpenAI",         note: "Paid · whisper-1 · $0.006/min",      keyLabel: "platform.openai.com → API Keys",          keyLink: "https://platform.openai.com/api-keys" },
+  { id: "gemini", label: "Google Gemini",   note: "Free tier · Gemini 1.5 Flash",       keyLabel: "aistudio.google.com → Get API key",       keyLink: "https://aistudio.google.com/app/apikey" },
+];
+
+export interface TranscriptionSettings {
+  provider: TranscriptionProvider;
+  api_key: string;
 }
 
 // Window state

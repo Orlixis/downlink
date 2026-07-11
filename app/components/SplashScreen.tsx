@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { soundManager } from "../lib/SoundManager";
 
 interface SplashScreenProps {
   onComplete: () => void;
@@ -13,6 +14,9 @@ export function SplashScreen({ onComplete, minimumDuration = 2000 }: SplashScree
   const [gone, setGone] = useState(false);
 
   useEffect(() => {
+    // Attempt to play splash sound (might be blocked by browser autoplay policy if no interaction)
+    soundManager.playSplash();
+
     const fadeTimer = setTimeout(() => setIsFadingOut(true), minimumDuration - 400);
     const doneTimer = setTimeout(() => { setGone(true); onComplete(); }, minimumDuration);
     return () => { clearTimeout(fadeTimer); clearTimeout(doneTimer); };

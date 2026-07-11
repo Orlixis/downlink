@@ -19,6 +19,7 @@ import { formatBytes, formatDuration } from "../types";
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { soundManager } from "../lib/SoundManager";
 
 // ─── Animated Preview Morph Wrapper ────────────────────────
 function AnimatedPreviewMorph({ 
@@ -74,7 +75,8 @@ function AnimatedPreviewMorph({
       backgroundColor: "rgb(59 130 246)", // blue-500
       border: "none",
       duration: 0.35,
-      ease: "power2.in", 
+      ease: "power2.in",
+      onStart: () => soundManager.playSwoosh()
     }, delay)
     .to(containerRef.current, {
       y: floorY,

@@ -104,6 +104,10 @@ export interface UseDownlinkReturn {
   openFile: (path: string) => Promise<void>;
   openFolder: (path: string) => Promise<void>;
 
+  // AI Transcription
+  checkWhisper: () => Promise<string>;
+  transcribeFile: (filePath: string, model?: "tiny" | "base" | "small" | "medium") => Promise<{ srt_path: string; method: string }>;
+
   // Error state
   lastError: string | null;
   clearError: () => void;
@@ -734,6 +738,23 @@ export function useDownlink(): UseDownlinkReturn {
     await invoke("open_folder", { path });
   }, []);
 
+  const checkWhisper = useCallback(async (): Promise<string> => {
+    return invoke<string>("check_whisper");
+  }, []);
+
+  const transcribeFile = useCallback(
+    async (
+      filePath: string,
+      model?: "tiny" | "base" | "small" | "medium"
+    ): Promise<{ srt_path: string; method: string }> => {
+      return invoke<{ srt_path: string; method: string }>("transcribe_file", {
+        filePath,
+        model: model ?? null,
+      });
+    },
+    []
+  );
+
   const clearError = useCallback(() => {
     setLastError(null);
   }, []);
@@ -799,6 +820,10 @@ export function useDownlink(): UseDownlinkReturn {
     getDefaultDownloadDir,
     openFile,
     openFolder,
+
+    // AI Transcription
+    checkWhisper,
+    transcribeFile,
 
     // Error state
     lastError,

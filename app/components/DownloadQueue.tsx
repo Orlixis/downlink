@@ -22,6 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { CloudDownload, Clock, Trash2, Zap, FolderOpen, GripVertical } from "lucide-react";
 import { DownloadItem } from "./DownloadItem";
+import type { WhisperModel } from "./DownloadItem";
 import type { QueueItem } from "../types";
 import { formatSpeed } from "../types";
 
@@ -36,6 +37,7 @@ interface DownloadQueueProps {
   onOpenFolder: (path: string) => void;
   onClearQueue: () => void;
   onClearHistory: () => void;
+  onTranscribe?: (filePath: string, model: WhisperModel) => Promise<{ srt_path: string; method: string }>;
 }
 
 // ── Sortable wrapper for a single queue item ──────────────────────
@@ -52,6 +54,7 @@ function SortableQueueItem({
   onRetry: (id: string) => void;
   onOpen: (path: string) => void;
   onOpenFolder: (path: string) => void;
+  onTranscribe?: (filePath: string, model: WhisperModel) => Promise<{ srt_path: string; method: string }>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -94,6 +97,7 @@ function SortableQueueItem({
           onRetry={props.onRetry}
           onOpen={props.onOpen}
           onOpenFolder={props.onOpenFolder}
+          onTranscribe={props.onTranscribe}
         />
       </div>
     </div>
@@ -112,6 +116,7 @@ export function DownloadQueue({
   onOpenFolder,
   onClearQueue,
   onClearHistory,
+  onTranscribe,
 }: DownloadQueueProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [orderedQueue, setOrderedQueue] = useState<QueueItem[]>([]);
@@ -299,6 +304,7 @@ export function DownloadQueue({
               onRetry={onRetry}
               onOpen={onOpen}
               onOpenFolder={onOpenFolder}
+              onTranscribe={onTranscribe}
             />
           ))
         ) : (
@@ -323,6 +329,7 @@ export function DownloadQueue({
                   onRetry={onRetry}
                   onOpen={onOpen}
                   onOpenFolder={onOpenFolder}
+                  onTranscribe={onTranscribe}
                 />
               ))}
             </SortableContext>
@@ -339,6 +346,7 @@ export function DownloadQueue({
                   onRetry={onRetry}
                   onOpen={onOpen}
                   onOpenFolder={onOpenFolder}
+                  onTranscribe={onTranscribe}
                 />
               ) : null}
             </DragOverlay>

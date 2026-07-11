@@ -884,11 +884,57 @@ async fn execute_download(
     resumable: bool,
 ) -> Result<Option<String>, DownloadError> {
     // ── Decode feature-flag suffixes from preset_id ───────────────────────────
-    // Format: "<base_preset>[+subs][+sb]"  e.g. "best_video+subs+sb"
+    // Format: "<base_preset>[+subs][+sb][+trim:SS.S-EE.E][+meta]"
     // Use replace() to strip suffixes — safe on any byte boundary.
     let wants_subtitles = preset_id.contains("+subs");
     let wants_sponsorblock = preset_id.contains("+sb");
-    let clean_preset = preset_id.replace("+subs", "").replace("+sb", "");
+    let wants_meta = preset_id.contains("+meta");
+
+    // Extract trim section: "+trim:SS.S-EE.E"
+    let trim_section: Option<String> = {
+        if let Some(trim_idx) = preset_id.find("+trim:") {
+            let after = &preset_id[trim_idx + 6..];
+            // section ends at next '+' or end-of-string
+            let end = after.find('+').unwrap_or(after.len());
+            let range_str = &after[..end];
+            // Expect "SS.S-EE.E"
+            if let Some(dash) = range_str.find('-') {
+                let start_s = range_str[..dash].parse::<f64>().ok();
+                let end_s = range_str[dash + 1..].parse::<f64>().ok();
+                if let (Some(s), Some(e)) = (start_s, end_s) {
+                    // Format as *HH:MM:SS-HH:MM:SS for yt-dlp
+                    let fmt = |secs: f64| -> String {
+                        let total = secs as u64;
+                        let h = total / 3600;
+                        let m = (total % 3600) / 60;
+                        let sec = total % 60;
+                        format!("{:02}:{:02}:{:02}", h, m, sec)
+                    };
+                    Some(format!("*{}-{}", fmt(s), fmt(e)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // Strip ALL suffixes to get the clean preset id
+    let clean_preset = {
+        let mut p = preset_id.to_string();
+        p = p.replace("+subs", "");
+        p = p.replace("+sb", "");
+        p = p.replace("+meta", "");
+        // Strip +trim:... block
+        while let Some(idx) = p.find("+trim:") {
+            let end = p[idx + 1..].find('+').map(|i| idx + 1 + i).unwrap_or(p.len());
+            p.drain(idx..end);
+        }
+        p
+    };
     let preset_id = clean_preset.as_str();
 
     // Support "custom:<format_string>" as a preset_id for user-selected qualities.
@@ -945,6 +991,28 @@ async fn execute_download(
             "sponsor,selfpromo,interaction,intro,outro".to_string(),
         ]);
         log::info!("Download {} — SponsorBlock removal enabled", id);
+    }
+
+    // Inject trim / download-sections arg
+    if let Some(ref section) = trim_section {
+        args.push("--download-sections".to_string());
+        args.push(section.clone());
+        // Force keyframe splitting so the cut is at least approximately accurate
+        args.push("--force-keyframes-at-cuts".to_string());
+        log::info!("Download {} — trim sections: {}", id, section);
+    }
+
+    // Inject metadata embedding args (requires ffmpeg)
+    if wants_meta {
+        args.extend([
+            "--embed-thumbnail".to_string(),
+            "--add-metadata".to_string(),
+            "--embed-metadata".to_string(),
+            // Ensure thumbnail is converted to a compatible format for embedding
+            "--convert-thumbnails".to_string(),
+            "jpg".to_string(),
+        ]);
+        log::info!("Download {} — metadata embedding enabled", id);
     }
 
     // Resume partial file if this download was previously Stopped

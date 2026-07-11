@@ -1,11 +1,14 @@
 import { useState, useEffect, RefObject } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { soundManager } from "../lib/SoundManager";
 
 interface UseModalAnimationProps {
   isOpen: boolean;
+  isExiting?: boolean;
   onClose: () => void;
   targetId: string;
+  exitTargetId?: string;
   modalRef: RefObject<HTMLDivElement | null>;
   backdropRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
@@ -13,8 +16,10 @@ interface UseModalAnimationProps {
 
 export function useModalAnimation({
   isOpen,
+  isExiting,
   onClose,
   targetId,
+  exitTargetId,
   modalRef,
   backdropRef,
   contentRef,
@@ -23,10 +28,10 @@ export function useModalAnimation({
   const [renderState, setRenderState] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isExiting) {
       setRenderState(true);
     }
-  }, [isOpen]);
+  }, [isOpen, isExiting]);
 
   useGSAP(() => {
     if (!renderState || !modalRef.current || !backdropRef.current || !contentRef.current) return;
@@ -52,7 +57,7 @@ export function useModalAnimation({
       targetY = -window.innerHeight * 0.45;
     }
 
-    if (isOpen) {
+    if (isOpen && !isExiting) {
       // ENTRANCE ANIMATION
       const tl = gsap.timeline();
 
@@ -125,12 +130,14 @@ export function useModalAnimation({
         duration: 0.2
       }, "-=0.2");
 
-    } else {
+    } else if (isExiting || !isOpen) {
       // EXIT ANIMATION
       const tl = gsap.timeline({
         onComplete: () => {
           setRenderState(false);
-          // Only trigger the actual React unmount when animation is done
+          if (isExiting) {
+            onClose(); // Auto-close when exit finishes if controlled via isExiting
+          }
         }
       });
 
@@ -145,42 +152,92 @@ export function useModalAnimation({
       
       // 2. Morph in place into a tiny ball
       .to(modalRef.current, {
-        width: 25,
-        height: 25,
-        borderRadius: "50%",
+        width: 24,
+        height: 24,
+        borderRadius: "12px",
         backgroundColor: "#3b82f6", // Solid blue ball
-        boxShadow: "0 0 30px 10px rgba(59, 130, 246, 0.6)", // Blue glow
+        boxShadow: "none", 
+        border: "none",
         duration: 0.35,
         ease: "power2.inOut"
-      })
+      });
       
-      // 3. Throw the ball to the target icon with a realistic floor bounce
-      // Calculate the 'floor' (bottom of the window relative to the center)
-      const floorY = (window.innerHeight / 2) - 20;
+      // Calculate exit target trajectory if exitTargetId is provided
+      if (exitTargetId) {
+        const exitEl = document.getElementById(exitTargetId);
+        const actionEl = document.getElementById("action-bar-container");
+        const rect = modalRef.current.getBoundingClientRect();
+        
+        let targetFloorY = window.innerHeight - rect.bottom - 40;
+        if (actionEl) {
+          const actionRect = actionEl.getBoundingClientRect();
+          targetFloorY = actionRect.top - rect.bottom;
+        }
 
-      // X moves smoothly across the whole trajectory
-      tl.to(modalRef.current, {
-        x: targetX,
-        duration: 0.7,
-        ease: "power1.out"
-      })
-      // Y first falls DOWN to the floor (accelerating with gravity)
-      .to(modalRef.current, {
-        y: floorY, 
-        duration: 0.25,
-        ease: "power2.in"
-      }, "<") 
-      // Then reflects off the floor and arcs UP into the icon
-      .to(modalRef.current, {
-        y: targetY, 
-        duration: 0.45,
-        ease: "back.out(1.0)" // Slight catch as it lands in the icon
-      }, ">"); // Run immediately after hitting the floor
+        let exitTargetX = window.innerWidth - rect.right - 40;
+        let exitTargetY = 80 - rect.top;
+
+        if (exitEl) {
+          const queueRect = exitEl.getBoundingClientRect();
+          exitTargetX = queueRect.left + 40 - rect.left;
+          exitTargetY = queueRect.top + 60 - rect.top;
+        }
+
+        const peakY = exitTargetY - 150;
+
+        // Reset relative positioning for GSAP transforms
+        gsap.set(modalRef.current, { x: 0, y: 0 });
+
+        tl.to(modalRef.current, {
+          y: targetFloorY, // hit the floor
+          duration: 0.25,
+          ease: "power2.in",
+        }, "+=0.1")
+        .call(() => soundManager.playBounce("floor"), undefined, "-=0.04")
+        .to(modalRef.current, {
+          x: exitTargetX,
+          scale: 0.5,
+          duration: 0.5,
+          ease: "none"
+        }, ">")
+        .to(modalRef.current, {
+          y: peakY,
+          duration: 0.25,
+          ease: "power2.out"
+        }, "<")
+        .to(modalRef.current, {
+          y: exitTargetY,
+          duration: 0.25,
+          ease: "power2.in",
+        }, ">")
+        .call(() => soundManager.playBounce("target"), undefined, "-=0.04");
+      } else {
+        // 3. Original Throw the ball to the target icon with a realistic floor bounce
+        const floorY = (window.innerHeight / 2) - 20;
+
+        tl.to(modalRef.current, {
+          x: targetX,
+          duration: 0.7,
+          ease: "power1.out"
+        })
+        .to(modalRef.current, {
+          y: floorY, 
+          duration: 0.25,
+          ease: "power2.in",
+        }, "<") 
+        .call(() => soundManager.playBounce("floor"), undefined, "-=0.04")
+        .to(modalRef.current, {
+          y: targetY, 
+          duration: 0.45,
+          ease: "back.out(1.0)",
+        }, ">")
+        .call(() => soundManager.playBounce("target"), undefined, "-=0.04");
+      }
 
       // Fade backdrop out near the end of the throw
       tl.to(backdropRef.current, { opacity: 0, duration: 0.3 }, "-=0.3");
     }
-  }, [isOpen, renderState, targetId]);
+  }, [isOpen, isExiting, renderState, targetId, exitTargetId]);
 
   return { renderState };
 }

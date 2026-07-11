@@ -12,8 +12,12 @@ import {
   FolderOpen,
   Save,
   Loader2,
+  Mic,
+  ExternalLink,
+  Check,
 } from "lucide-react";
-import type { UserSettings, AppUpdateInfo } from "../types";
+import type { UserSettings, AppUpdateInfo, TranscriptionProvider } from "../types";
+import { TRANSCRIPTION_PROVIDERS } from "../types";
 import { AppUpdater } from "./AppUpdater";
 import { useModalAnimation } from "../hooks/useModalAnimation";
 
@@ -30,15 +34,16 @@ interface SettingsModalProps {
   initialTab?: TabId;
 }
 
-type TabId = "general" | "formats" | "sponsorblock" | "subtitles" | "updates" | "network";
+type TabId = "general" | "formats" | "sponsorblock" | "subtitles" | "updates" | "network" | "transcription";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "general", label: "General", icon: Settings },
-  { id: "formats", label: "Formats", icon: FileVideo },
-  { id: "sponsorblock", label: "SponsorBlock", icon: Scissors },
-  { id: "subtitles", label: "Subtitles", icon: Subtitles },
-  { id: "updates", label: "Updates", icon: RefreshCw },
-  { id: "network", label: "Network", icon: Globe },
+  { id: "general",       label: "General",       icon: Settings },
+  { id: "formats",       label: "Formats",       icon: FileVideo },
+  { id: "sponsorblock",  label: "SponsorBlock",  icon: Scissors },
+  { id: "subtitles",     label: "Subtitles",     icon: Subtitles },
+  { id: "updates",       label: "Updates",       icon: RefreshCw },
+  { id: "network",       label: "Network",       icon: Globe },
+  { id: "transcription", label: "Transcription", icon: Mic },
 ];
 
 const SPONSORBLOCK_CATEGORIES = [
@@ -155,6 +160,15 @@ export function SettingsModal({
     <K extends keyof UserSettings["network"]>(key: K, value: UserSettings["network"][K]) => {
       setLocalSettings((prev) =>
         prev ? { ...prev, network: { ...prev.network, [key]: value } } : prev
+      );
+    },
+    []
+  );
+
+  const updateTranscription = useCallback(
+    <K extends keyof UserSettings["transcription"]>(key: K, value: UserSettings["transcription"][K]) => {
+      setLocalSettings((prev) =>
+        prev ? { ...prev, transcription: { ...prev.transcription, [key]: value } } : prev
       );
     },
     []
@@ -546,6 +560,75 @@ export function SettingsModal({
                     </div>
                   </div>
                 )}
+              </>
+            )}
+
+            {activeTab === "transcription" && localSettings && (
+              <>
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+                    AI Transcription
+                  </h3>
+                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                    Downlink can generate subtitles automatically. It uses platform subtitles when available,
+                    falls back to a built-in free AI, or you can use your own API key for maximum speed and privacy.
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Provider</label>
+                    <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-3">
+                      {TRANSCRIPTION_PROVIDERS.map((provider) => (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={() => updateTranscription("provider", provider.id)}
+                          className={`relative flex flex-col items-start gap-1 rounded-xl border p-4 text-left transition-all ${
+                            localSettings.transcription.provider === provider.id
+                              ? "border-blue-500 bg-blue-50 dark:border-blue-500 dark:bg-blue-500/10"
+                              : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+                          }`}
+                        >
+                          <div className="flex w-full items-center justify-between">
+                            <span className="font-medium text-sm">{provider.label}</span>
+                            {localSettings.transcription.provider === provider.id && (
+                              <Check className="h-4 w-4 text-blue-500" />
+                            )}
+                          </div>
+                          <span className="text-xs text-zinc-500">{provider.note}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 flex items-center justify-between text-sm font-medium">
+                      <span>API Key (Optional)</span>
+                      {localSettings.transcription.provider && (
+                        <a
+                          href={TRANSCRIPTION_PROVIDERS.find(p => p.id === localSettings.transcription.provider)?.keyLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 text-xs text-blue-500 hover:underline"
+                        >
+                          Get key: {TRANSCRIPTION_PROVIDERS.find(p => p.id === localSettings.transcription.provider)?.keyLabel}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </label>
+                    <input
+                      type="password"
+                      value={localSettings.transcription.api_key}
+                      onChange={(e) => updateTranscription("api_key", e.target.value)}
+                      placeholder={`Paste your ${TRANSCRIPTION_PROVIDERS.find(p => p.id === localSettings.transcription.provider)?.label} API key here...`}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                    <p className="mt-2 text-xs text-zinc-500">
+                      If left empty, Downlink will try to use its bundled community key. Adding your own key avoids rate limits.
+                    </p>
+                  </div>
+                </div>
               </>
             )}
           </div>

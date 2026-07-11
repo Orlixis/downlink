@@ -1,8 +1,8 @@
 "use client";
 
-import { Download, Captions, Scissors, Loader2 } from "lucide-react";
+import { Download, Captions, Scissors, Loader2, Database, ClapperboardIcon } from "lucide-react";
 import type { PresetWithHint } from "../types";
-import { PresetSelector } from "./PresetSelector";
+import { TrimSlider } from "./TrimSlider";
 
 interface ActionBarProps {
   presetId: string;
@@ -12,6 +12,17 @@ interface ActionBarProps {
   onSubtitlesToggle: () => void;
   sponsorBlockEnabled: boolean;
   onSponsorBlockToggle: () => void;
+  // Trim
+  trimEnabled: boolean;
+  onTrimToggle: () => void;
+  trimStart: number;
+  trimEnd: number;
+  onTrimChange: (start: number, end: number) => void;
+  duration: number; // in seconds (0 if no preview data)
+  // Metadata embed
+  embedMetaEnabled: boolean;
+  onEmbedMetaToggle: () => void;
+  // Download
   onDownload: () => void;
   isSubmitting: boolean;
   isPlaylist: boolean;
@@ -27,6 +38,14 @@ export function ActionBar({
   onSubtitlesToggle,
   sponsorBlockEnabled,
   onSponsorBlockToggle,
+  trimEnabled,
+  onTrimToggle,
+  trimStart,
+  trimEnd,
+  onTrimChange,
+  duration,
+  embedMetaEnabled,
+  onEmbedMetaToggle,
   onDownload,
   isSubmitting,
   isPlaylist,
@@ -34,11 +53,23 @@ export function ActionBar({
   previewLoading = false,
 }: ActionBarProps) {
   const isLoading = isSubmitting || previewLoading;
+  const canTrim = duration > 0 && !isPlaylist;
 
   return (
-    <div className="border-t border-zinc-800/80 bg-transparent px-3 py-2.5">
-      <div className="flex items-center gap-2">
+    <div className="border-t border-zinc-800/80 bg-transparent">
+      {/* Trim slider panel — visible when trim is enabled */}
+      {trimEnabled && canTrim && (
+        <div className="border-b border-zinc-800/60 px-3 pt-2 pb-1">
+          <TrimSlider
+            duration={duration}
+            start={trimStart}
+            end={trimEnd}
+            onChange={onTrimChange}
+          />
+        </div>
+      )}
 
+      <div className="flex items-center gap-2 px-3 py-2.5">
         {/* ── Toggle buttons ─────────────────────────── */}
         <div className="flex items-center gap-1.5">
           {/* Subtitles toggle */}
@@ -72,14 +103,43 @@ export function ActionBar({
             <Scissors className="h-3.5 w-3.5 flex-shrink-0" />
             <span>SponsorBlock</span>
           </button>
+
+          {/* Trim toggle — only shown when a single video with duration is previewed */}
+          {canTrim && (
+            <button
+              type="button"
+              onClick={onTrimToggle}
+              title="Trim clip — select a start and end time to download only that segment"
+              aria-pressed={trimEnabled}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 ${
+                trimEnabled
+                  ? "bg-violet-600 text-white shadow-sm shadow-violet-900/40"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+              }`}
+            >
+              <ClapperboardIcon className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>Trim Clip</span>
+            </button>
+          )}
+
+          {/* Embed Metadata toggle */}
+          <button
+            type="button"
+            onClick={onEmbedMetaToggle}
+            title="Embed thumbnail and metadata into the file (requires ffmpeg)"
+            aria-pressed={embedMetaEnabled}
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 ${
+              embedMetaEnabled
+                ? "bg-emerald-600 text-white shadow-sm shadow-emerald-900/40"
+                : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+            }`}
+          >
+            <Database className="h-3.5 w-3.5 flex-shrink-0" />
+            <span>Embed Meta</span>
+          </button>
         </div>
 
-        {/* ── Preset selector (Radix) ─────────────────── */}
-        <PresetSelector
-          presets={presets}
-          value={presetId}
-          onChange={onPresetChange}
-        />
+        {/* Removed redundant global PresetSelector */}
 
         {/* ── Download button ─────────────────────────── */}
         <button
@@ -97,7 +157,7 @@ export function ActionBar({
           ) : (
             <>
               <Download className="h-3.5 w-3.5" />
-              <span>{isPlaylist ? "Download Playlist" : "Download"}</span>
+              <span>{isPlaylist ? "Download Playlist" : trimEnabled && canTrim ? "Download Clip" : "Download"}</span>
             </>
           )}
         </button>
