@@ -3,9 +3,10 @@
 import { useRef, useState, useEffect } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Link } from "lucide-react";
+import { Package } from "lucide-react";
 import { soundManager } from "../lib/SoundManager";
 import { useBlackHolePhysics } from "../hooks/useBlackHolePhysics";
+import { useGravityCursor } from "../hooks/useGravityCursor";
 
 interface BlackHoleOverlayProps {
   mode: "drag" | "clipboard";
@@ -25,6 +26,12 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
   useBlackHolePhysics(canvasRef, coreRef, isActive, absorbedRef);
 
   const isDrag = mode === "drag";
+  
+  // Custom gravity cursor replaces standard pointer in clipboard mode
+  useGravityCursor(urlPillRef, coreRef, isActive && !isDrag, () => {
+    // When absorbed by gravity
+    if (!absorbedRef.current) handleAbsorb();
+  });
 
   // ── Smooth Entrance & Reactivation ──────────────────────────────────────
   useGSAP(() => {
@@ -42,9 +49,9 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
       // Fade in the 3D physics canvas
       tl.to(canvasRef.current, { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1);
       
-      // Drop in the URL pill
+      // Fade in the URL pill (physics handles the movement)
       if (mode === "clipboard" && urlPillRef.current) {
-        tl.to(urlPillRef.current, { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: "back.out(2)" }, 0.1);
+        tl.to(urlPillRef.current, { opacity: 1, duration: 0.5 }, 0.1);
       }
     } else if (!isActive && !absorbedRef.current) {
       soundManager.stopPortalIdle();
@@ -57,9 +64,9 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
       // Fade out the 3D physics canvas
       tl.to(canvasRef.current, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0);
       
-      // Pull away the URL pill
+      // Fade out the URL pill
       if (urlPillRef.current) {
-        tl.to(urlPillRef.current, { y: -30, opacity: 0, scale: 0.9, duration: 0.3, ease: "power2.in" }, 0);
+        tl.to(urlPillRef.current, { opacity: 0, duration: 0.3 }, 0);
       }
       
       // Keep the overlay background visible slightly longer so the shrink animation is visible
@@ -131,10 +138,7 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
     // The physics simulation handles most of the movement,
     // but the URL pill still bobs toward core using GSAP.
 
-    // URL pill bobs toward core
-    if (mode === "clipboard" && urlPillRef.current) {
-      gsap.to(urlPillRef.current, { y: 10, duration: 1.8, repeat: -1, yoyo: true, ease: "sine.inOut", delay: 0.8 });
-    }
+    // The URL pill bob is removed because useGravityCursor controls its transform.
   }, [mode]);
 
   // ── Absorb: pill falls into singularity ────────────────────────────────
@@ -147,7 +151,7 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
     const tl = gsap.timeline({ onComplete: () => onAbsorb?.() });
 
     if (urlPillRef.current) {
-      tl.to(urlPillRef.current, { scale: 0, opacity: 0, y: 40, duration: 0.6, ease: "power3.in" });
+      tl.to(urlPillRef.current, { opacity: 0, duration: 0.1 }, 0);
     }
     tl.to(coreRef.current, { scale: 1.5, duration: 0.15, ease: "power2.out" }, "-=0.3");
     tl.to(coreRef.current, { scale: 0, opacity: 0, duration: 0.35, ease: "power3.in" });
@@ -166,7 +170,9 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
   return (
     <div
       ref={overlayRef}
-      className="absolute inset-0 z-[9999] flex flex-col items-center justify-center opacity-0"
+      className={`absolute inset-0 z-[9999] flex flex-col items-center justify-center opacity-0 overflow-hidden ${
+        isActive && !isDrag ? "cursor-none" : ""
+      }`}
       style={{
         // Start slightly transparent — GSAP animates from 0 to 1
         // We use a high z-index to ensure it sits above everything
@@ -187,14 +193,14 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
           style={{ zIndex: 10 }}
         />
 
-        {/* URL pill — clipboard mode only */}
+        {/* URL pill acts as the physical gravity cursor (clipboard mode only) */}
         {!isDrag && (
           <div
             ref={urlPillRef}
-            className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 backdrop-blur-sm relative z-20 opacity-0 -translate-y-[50px]"
+            className="absolute top-0 left-0 flex items-center justify-center h-12 w-12 rounded-xl border border-violet-400/60 bg-indigo-900/60 backdrop-blur-md z-[10000] opacity-0 shadow-[0_0_25px_rgba(139,92,246,0.5)] origin-center pointer-events-none"
+            style={{ willChange: "transform" }}
           >
-            <Link className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
-            <span className="max-w-[220px] truncate font-mono text-[11px] text-white/85">{clipboardUrl}</span>
+            <Package className="h-6 w-6 text-cyan-300" />
           </div>
         )}
 
