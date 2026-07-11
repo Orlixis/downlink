@@ -99,7 +99,8 @@ export function useModalAnimation({
       .to(modalRef.current, {
         y: floorY,
         duration: 0.45,
-        ease: "power2.in" 
+        ease: "power2.in",
+        onComplete: () => soundManager.playBounce("open", "floor")
       }, 0)
       // Y then bounces UP from the floor into the center of the screen
       .to(modalRef.current, {
@@ -192,8 +193,8 @@ export function useModalAnimation({
           y: targetFloorY, // hit the floor
           duration: 0.25,
           ease: "power2.in",
-        }, "+=0.1")
-        .call(() => soundManager.playBounce("floor"), undefined, "-=0.04")
+          onComplete: () => soundManager.playBounce("exit", "floor")
+        }, "-=0.02")
         .to(modalRef.current, {
           x: exitTargetX,
           scale: 0.5,
@@ -209,8 +210,8 @@ export function useModalAnimation({
           y: exitTargetY,
           duration: 0.25,
           ease: "power2.in",
-        }, ">")
-        .call(() => soundManager.playBounce("target"), undefined, "-=0.04");
+          onComplete: () => soundManager.playBounce("exit", "target")
+        }, "-=0.02");
       } else {
         // 3. Original Throw the ball to the target icon with a realistic floor bounce
         const floorY = (window.innerHeight / 2) - 20;
@@ -224,14 +225,14 @@ export function useModalAnimation({
           y: floorY, 
           duration: 0.25,
           ease: "power2.in",
+          onComplete: () => soundManager.playBounce("exit", "floor")
         }, "<") 
-        .call(() => soundManager.playBounce("floor"), undefined, "-=0.04")
         .to(modalRef.current, {
           y: targetY, 
           duration: 0.45,
           ease: "back.out(1.0)",
-        }, ">")
-        .call(() => soundManager.playBounce("target"), undefined, "-=0.04");
+          // onComplete: () => soundManager.playBounce("exit", "target")
+        }, ">");
       }
 
       // Fade backdrop out near the end of the throw

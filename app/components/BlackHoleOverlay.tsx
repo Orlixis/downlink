@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Link } from "lucide-react";
@@ -22,13 +22,75 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
   const urlPillRef = useRef<HTMLDivElement>(null);
   const accretionRef = useRef<HTMLDivElement>(null);
   const absorbedRef = useRef(false);
+  const [isActive, setIsActive] = useState(true);
 
   const isDrag = mode === "drag";
 
+  // ── Mouse tracking & Sound control ──────────────────────────────────────
+  useEffect(() => {
+    if (isActive && !absorbedRef.current) {
+      soundManager.startPortalIdle();
+      // Ensure it's visible if it became active again
+      gsap.to(overlayRef.current, { opacity: 1, duration: 0.3, ease: "power2.out", overwrite: "auto" });
+    } else if (!isActive && !absorbedRef.current) {
+      soundManager.stopPortalIdle();
+      // Hide the singularity
+      gsap.to(overlayRef.current, { opacity: 0, duration: 0.3, ease: "power2.out", overwrite: "auto" });
+    }
+
+    return () => {
+      soundManager.stopPortalIdle();
+    };
+  }, [isActive]);
+
+  useEffect(() => {
+    const handleDeactivate = () => setIsActive(false);
+    const handleActivate = () => setIsActive(true);
+
+    const handleMouseOut = (e: MouseEvent) => {
+      if (!e.relatedTarget) {
+        setIsActive(false);
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isActive && !absorbedRef.current) {
+        setIsActive(true);
+        return;
+      }
+
+      if (!isActive || !coreRef.current || absorbedRef.current) return;
+      
+      const rect = coreRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      
+      const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+      
+      const maxDist = window.innerWidth * 0.7; 
+      
+      let volume = 1.0 - (dist / maxDist);
+      if (volume < 0.05) volume = 0.05;
+      if (volume > 1.0) volume = 1.0;
+      
+      soundManager.setPortalVolume(volume);
+    };
+
+    window.addEventListener("mouseout", handleMouseOut);
+    window.addEventListener("blur", handleDeactivate);
+    window.addEventListener("focus", handleActivate);
+    window.addEventListener("mousemove", handleMouseMove);
+
+    return () => {
+      window.removeEventListener("mouseout", handleMouseOut);
+      window.removeEventListener("blur", handleDeactivate);
+      window.removeEventListener("focus", handleActivate);
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, [isActive]);
+
   // ── Entrance animation ──────────────────────────────────────────────────
   useGSAP(() => {
-    soundManager.playSwoosh();
-    
     // Overlay itself: fade in from transparent (start is visible via CSS — GSAP just animates)
     gsap.fromTo(overlayRef.current, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" });
 
@@ -77,7 +139,7 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
     if (absorbedRef.current) return;
     absorbedRef.current = true;
     
-    soundManager.playSwoosh();
+    soundManager.stopPortalIdle();
 
     const tl = gsap.timeline({ onComplete: () => onAbsorb?.() });
 
@@ -91,6 +153,7 @@ export function BlackHoleOverlay({ mode, clipboardUrl, onAbsorb, onDismiss }: Bl
 
   // ── Dismiss: fade out ──────────────────────────────────────────────────
   const handleDismiss = () => {
+    soundManager.stopPortalIdle();
     gsap.to(overlayRef.current, {
       opacity: 0, duration: 0.25, ease: "power2.in",
       onComplete: () => onDismiss?.(),

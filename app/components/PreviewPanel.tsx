@@ -75,8 +75,7 @@ function AnimatedPreviewMorph({
       backgroundColor: "rgb(59 130 246)", // blue-500
       border: "none",
       duration: 0.35,
-      ease: "power2.in",
-      onStart: () => soundManager.playSwoosh()
+      ease: "power2.in"
     }, delay)
     .to(containerRef.current, {
       y: floorY,
@@ -233,7 +232,8 @@ function AnimatedPreviewMorph({
       tl.to(containerRef.current, {
         y: floorY, // hit the floor
         duration: 0.25,
-        ease: "power2.in" // accelerate downwards (gravity)
+        ease: "power2.in", // accelerate downwards (gravity)
+        onStart: () => soundManager.playThrow()
       }, `+=${delay}`)
       .to(containerRef.current, {
         x: targetX, // travel horizontally at constant speed

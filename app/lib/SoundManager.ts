@@ -4,7 +4,11 @@ class SoundManager {
   private static instance: SoundManager;
   private context: AudioContext | null = null;
   private swooshBuffer: AudioBuffer | null = null;
-  private bounceBuffer: AudioBuffer | null = null;
+  private bounceOpenBuffer: AudioBuffer | null = null;
+  private bounceExitBuffer: AudioBuffer | null = null;
+  private throwBuffer: AudioBuffer | null = null;
+  private portalSource: AudioBufferSourceNode | null = null;
+  private portalGainNode: GainNode | null = null;
 
   private constructor() {
     if (typeof window !== "undefined") {
@@ -42,20 +46,30 @@ class SoundManager {
   private async loadAudioFiles() {
     if (!this.context) return;
     try {
-      const [swooshRes, bounceRes] = await Promise.all([
-        fetch("/sounds/black-hole-impact.mp3"),
-        fetch("/sounds/jump-sound.mp3")
+      const [swooshRes, bounceOpenRes, bounceExitRes, throwRes] = await Promise.all([
+        fetch("/sounds/portal_idle.mp3"),
+        fetch("/sounds/jump-sound-open.mp3"),
+        fetch("/sounds/jump-sound-exit.mp3"),
+        fetch("/sounds/download-throw-sound.mp3")
       ]);
       
       const swooshArray = await swooshRes.arrayBuffer();
-      const bounceArray = await bounceRes.arrayBuffer();
+      const bounceOpenArray = await bounceOpenRes.arrayBuffer();
+      const bounceExitArray = await bounceExitRes.arrayBuffer();
+      const throwArray = await throwRes.arrayBuffer();
       
       // decodeAudioData doesn't always support Promise API in older Safari, but standard in modern browsers.
       this.context.decodeAudioData(swooshArray, (buffer) => {
         this.swooshBuffer = buffer;
       });
-      this.context.decodeAudioData(bounceArray, (buffer) => {
-        this.bounceBuffer = buffer;
+      this.context.decodeAudioData(bounceOpenArray, (buffer) => {
+        this.bounceOpenBuffer = buffer;
+      });
+      this.context.decodeAudioData(bounceExitArray, (buffer) => {
+        this.bounceExitBuffer = buffer;
+      });
+      this.context.decodeAudioData(throwArray, (buffer) => {
+        this.throwBuffer = buffer;
       });
     } catch (e) {
       console.error("Failed to load audio buffers:", e);
@@ -72,12 +86,55 @@ class SoundManager {
     // No splash sound provided
   }
 
-  public playSwoosh() {
-    if (!this.context || !this.swooshBuffer) return;
+  public startPortalIdle() {
+    if (!this.context || !this.swooshBuffer || this.portalSource) return;
     this.init();
 
     const source = this.context.createBufferSource();
     source.buffer = this.swooshBuffer;
+    source.loop = true; // Make it continuous
+    
+    const gainNode = this.context.createGain();
+    gainNode.gain.value = 0.5; // Default starting volume
+
+    source.connect(gainNode);
+    gainNode.connect(this.context.destination);
+    
+    source.start(0);
+
+    this.portalSource = source;
+    this.portalGainNode = gainNode;
+  }
+
+  public setPortalVolume(volume: number) {
+    if (this.portalGainNode && this.context) {
+      // Smoothly transition volume over 100ms
+      this.portalGainNode.gain.setTargetAtTime(volume, this.context.currentTime, 0.1);
+    }
+  }
+
+  public stopPortalIdle() {
+    if (this.portalSource) {
+      try {
+        this.portalSource.stop();
+        this.portalSource.disconnect();
+      } catch (e) {}
+      this.portalSource = null;
+    }
+    if (this.portalGainNode) {
+      try {
+        this.portalGainNode.disconnect();
+      } catch (e) {}
+      this.portalGainNode = null;
+    }
+  }
+
+  public playThrow() {
+    if (!this.context || !this.throwBuffer) return;
+    this.init();
+
+    const source = this.context.createBufferSource();
+    source.buffer = this.throwBuffer;
     
     const gainNode = this.context.createGain();
     gainNode.gain.value = 0.5;
@@ -88,12 +145,15 @@ class SoundManager {
     source.start(0);
   }
 
-  public playBounce(type: "floor" | "target") {
-    if (!this.context || !this.bounceBuffer) return;
+  public playBounce(animation: "open" | "exit", type: "floor" | "target") {
+    if (!this.context) return;
+    const buffer = animation === "open" ? this.bounceOpenBuffer : this.bounceExitBuffer;
+    if (!buffer) return;
+
     this.init();
 
     const source = this.context.createBufferSource();
-    source.buffer = this.bounceBuffer;
+    source.buffer = buffer;
     
     const gainNode = this.context.createGain();
     
