@@ -356,6 +356,14 @@ export function useDownlink(): UseDownlinkReturn {
         );
         break;
       }
+
+      case "FetchProgress": {
+        const data = event.data as { url: string; hint: string };
+        // Dispatch a custom DOM event so page.tsx can update the preview skeleton hint
+        // without needing to thread a callback through the hook's return type.
+        window.dispatchEvent(new CustomEvent("downlink:fetchProgress", { detail: data }));
+        break;
+      }
     }
   }, []);
 

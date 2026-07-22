@@ -414,7 +414,7 @@ fn add_urls(
 
 #[tauri::command]
 async fn fetch_metadata(
-    _app: AppHandle,
+    app: AppHandle,
     state: State<'_, AppState>,
     url: String,
     _options: FetchMetadataOptions,
@@ -440,7 +440,7 @@ async fn fetch_metadata(
     // ── Cache miss: fetch ──────────────────────────────────────────
     let runner = build_ytdlp_runner(&state).await;
     let (meta, _output) = runner
-        .fetch_metadata(&first)
+        .fetch_metadata(&first, &app)
         .await
         .map_err(|e| format!("yt-dlp metadata failed: {e}"))?;
 
@@ -1389,6 +1389,21 @@ async fn transcribe_file(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("dlsniff", |ctx, request| {
+            use tauri::Emitter;
+            if let Some(query) = request.uri().query() {
+                if let Some(url_part) = query.split('&').find(|s| s.starts_with("url=")) {
+                    if let Ok(decoded) = urlencoding::decode(&url_part[4..]) {
+                        let _ = ctx.app_handle().emit("sniffed-url", serde_json::json!({ "url": decoded.into_owned() }));
+                    }
+                }
+            }
+            tauri::http::Response::builder()
+                .status(200)
+                .header("Access-Control-Allow-Origin", "*")
+                .body(Vec::new())
+                .unwrap()
+        })
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())

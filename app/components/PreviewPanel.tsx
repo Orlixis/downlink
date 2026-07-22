@@ -426,7 +426,11 @@ function MultiPreviewCard({
           <Skeleton className="h-10 w-[72px] flex-shrink-0 rounded-lg" />
           <div className="flex-1 min-w-0 space-y-1.5">
             <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-2.5 w-28" />
+            {preview.fetchHint ? (
+              <p className="text-[10px] text-blue-400/80 animate-pulse">{preview.fetchHint}</p>
+            ) : (
+              <Skeleton className="h-2.5 w-28" />
+            )}
           </div>
           <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-blue-400" />
         </div>
@@ -628,7 +632,9 @@ export function PreviewPanel({
               <Skeleton className="h-3.5 w-20" />
               <Skeleton className="h-3.5 w-16" />
             </div>
-            <p className="mt-5 text-xs text-zinc-600">Fetching video info…</p>
+            <p className="mt-5 text-xs text-blue-400/80 animate-pulse">
+              {allPreviews[0]?.fetchHint ?? "Fetching video info\u2026"}
+            </p>
           </div>
         ) : previewData ? (
           <div className="flex flex-col items-center text-center w-full">

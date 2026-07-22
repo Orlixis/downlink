@@ -344,6 +344,7 @@ export interface UrlPreviewItem {
   data: FetchMetadataResult | null;
   error: string | null;
   qualitiesLoading?: boolean;  // true while background yt-dlp quality fetch is running
+  fetchHint?: string;          // real-time tier status hint from backend ("Scanning page…" etc.)
 }
 
 // UI state types

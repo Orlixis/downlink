@@ -58,6 +58,9 @@ export function TrimModal({
       prevEndRef.current = end;
     } else {
       setIsPlaying(false);
+      if (playerRef.current) {
+        playerRef.current.pause();
+      }
     }
   }, [isOpen, initialStart, initialEnd, duration]);
 
@@ -143,7 +146,7 @@ export function TrimModal({
               autoPlay={true}
               muted={true}
               onTimeUpdate={(e: any) => {
-                if (localEnd && e.detail > localEnd) {
+                if (localEnd > 0 && e.detail > localEnd) {
                   try {
                     if (playerRef.current) playerRef.current.currentTime = localStart ?? 0;
                   } catch (e) {}

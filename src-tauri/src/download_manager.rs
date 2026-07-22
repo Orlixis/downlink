@@ -1281,6 +1281,50 @@ async fn execute_download(
     if !status.success() {
         let stderr_text = stderr_lines.join("\n");
         let (code, message, actions) = classify_error(&stderr_text);
+        
+        // Tier 4: Raw Download Bypass
+        if url.contains(".m3u8") || url.contains(".mp4") {
+            log::warn!("Tier 4 Bypass: yt-dlp failed, falling back to raw ffmpeg bypass for {}", url);
+            let final_fallback_path = format!("{}/downlink_raw_{}.mp4", output_dir, id);
+            
+            let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+            if let Some(ffmpeg_bin) = ffmpeg_path {
+                let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                ffmpeg_cmd.args(["-i", url, "-c", "copy", "-y", &final_fallback_path]);
+                
+                #[cfg(windows)]
+                ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                // Notify UI we are using fallback
+                let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                    id,
+                    status: events::DownloadStatus::Downloading,
+                    progress: Progress {
+                        percent: None,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        speed_bps: None,
+                        eta_seconds: None,
+                        phase: Some(Phase {
+                            name: "Fallback raw extraction...".to_string(),
+                            detail: None,
+                        }),
+                    },
+                }).await;
+
+                if let Ok(mut ffmpeg_child) = ffmpeg_cmd.spawn() {
+                    let _ = ffmpeg_child.wait().await;
+                    // Check if file was created and has size > 0
+                    if let Ok(metadata) = std::fs::metadata(&final_fallback_path) {
+                        if metadata.len() > 0 {
+                            log::info!("Tier 4 Bypass successful! Saved to {}", final_fallback_path);
+                            return Ok(Some(final_fallback_path));
+                        }
+                    }
+                }
+            }
+        }
+
         return Err(DownloadError::Failed {
             code,
             message,

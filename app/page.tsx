@@ -407,6 +407,25 @@ export default function Home() {
     fastFetchMetadataRef.current = downlink.fastFetchMetadata;
   });
 
+  // Listen for real-time tier progress hints from the backend and update the
+  // matching skeleton card so users see "Scanning page…" / "Deep scanning…" etc.
+  useEffect(() => {
+    if (!downlink.isTauri) return;
+    const handler = (e: Event) => {
+      const { url, hint } = (e as CustomEvent<{ url: string; hint: string }>).detail;
+      setUrlPreviews((prev) => {
+        if (!prev.has(url)) return prev;
+        const updated = new Map(prev);
+        const item = prev.get(url)!;
+        // Only update while still loading — don't stomp a resolved card
+        if (item.loading) updated.set(url, { ...item, fetchHint: hint });
+        return updated;
+      });
+    };
+    window.addEventListener("downlink:fetchProgress", handler);
+    return () => window.removeEventListener("downlink:fetchProgress", handler);
+  }, [downlink.isTauri]);
+
   // Auto-fetch preview for ALL extracted URLs in parallel.
   // Rules:
   //  - Debounce 500 ms so we don't fire while the user is still typing
