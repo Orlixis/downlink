@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.38](https://github.com/Orlixis/downlink/compare/v0.1.37...v0.1.38) (2026-07-22)
+
+
+### Features
+
+* implement backend fetch progress hints and add react-player support ([e3aa983](https://github.com/Orlixis/downlink/commit/e3aa9839d373a93fe247cb65dba88e82717caeb6))
+
 ### [0.1.37](https://github.com/Orlixis/downlink/compare/v0.1.36...v0.1.37) (2026-07-11)
 
 ### [0.1.36](https://github.com/Orlixis/downlink/compare/v0.1.35...v0.1.36) (2026-07-11)
