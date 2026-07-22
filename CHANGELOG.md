@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.39](https://github.com/Orlixis/downlink/compare/v0.1.38...v0.1.39) (2026-07-22)
+
+
+### Features
+
+* add FetchProgress event type and update metadata state to support fetch hints ([a6e652d](https://github.com/Orlixis/downlink/commit/a6e652de5c750ee577782487477552d808fd444e))
+
 ### [0.1.38](https://github.com/Orlixis/downlink/compare/v0.1.37...v0.1.38) (2026-07-22)
 
 
