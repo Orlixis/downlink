@@ -27,6 +27,7 @@ interface UrlPreview {
   data: FetchMetadataResult | null;
   error: string | null;
   presetId: string;
+  fetchHint?: string;
 }
 
 export default function Home() {

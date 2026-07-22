@@ -267,7 +267,16 @@ export type DownlinkEventType =
   | "ToolUpdateAvailable"
   | "ToolUpdateProgress"
   | "ToolUpdateCompleted"
-  | "ToolUpdateFailed";
+  | "ToolUpdateFailed"
+  | "FetchProgress";
+
+export interface FetchProgressEvent {
+  event: "FetchProgress";
+  data: {
+    url: string;
+    hint: string;
+  };
+}
 
 // Event payloads
 export interface AppReadyEvent {
@@ -326,6 +335,7 @@ export type DownlinkEvent =
   | DownloadProgressEvent
   | DownloadCompletedEvent
   | DownloadFailedEvent
+  | FetchProgressEvent
   | { event: DownlinkEventType; data: unknown };
 
 // A discrete quality option from yt-dlp's format list
