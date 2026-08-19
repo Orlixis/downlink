@@ -693,6 +693,7 @@ export default function Home() {
           uploader: previewData?.uploader ?? null,
           thumbnail_url: previewData?.thumbnail_url ?? null,
           duration_seconds: previewData?.duration_seconds ?? null,
+          stream_url: previewData?.stream_url ?? null,
           subtitles_enabled: subtitlesEnabled,
           sponsorblock_enabled: sponsorBlockEnabled,
         });
@@ -835,6 +836,7 @@ export default function Home() {
           uploader: metadata.uploader ?? null,
           thumbnail_url: metadata.thumbnail_url ?? null,
           duration_seconds: metadata.duration_seconds ?? null,
+          stream_url: metadata.stream_url ?? null,
         });
 
         if (settings?.general.auto_start !== false) {

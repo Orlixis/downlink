@@ -250,6 +250,7 @@ impl YtDlpRunner {
 
         let result = self.exec_json_lines(&args, self.cfg.metadata_timeout).await;
         
+        let mut sniffed_stream_opt: Option<String> = None;
         let (json_lines, output) = match result {
             Ok(res) => res,
             Err(e) => {
@@ -281,13 +282,40 @@ impl YtDlpRunner {
                 }
                 
                 if retry_with_sniffed {
+                    sniffed_stream_opt = Some(sniffed_url_result.clone());
                     let last_idx = args.len() - 1;
-                    args[last_idx] = sniffed_url_result;
+                    args[last_idx] = sniffed_url_result.clone();
+                    
+                    // Inject referer, origin, and browser User-Agent so CDNs with hotlink protection don't 403
+                    args.insert(0, "--referer".to_string());
+                    args.insert(1, url.to_string());
+                    if let Some(origin) = crate::url_utils::extract_origin(url) {
+                        args.insert(2, "--add-header".to_string());
+                        args.insert(3, format!("Origin: {}", origin));
+                    }
+                    args.insert(4, "--user-agent".to_string());
+                    args.insert(5, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36".to_string());
+
                     let _ = crate::events::emit_event(app, crate::events::DownlinkEvent::FetchProgress {
                         url: url.to_string(),
                         hint: "Found stream — loading info…".to_string(),
                     });
-                    self.exec_json_lines(&args, self.cfg.metadata_timeout).await?
+                    
+                    match self.exec_json_lines(&args, self.cfg.metadata_timeout).await {
+                        Ok(res) => res,
+                        Err(err) => {
+                            log::warn!("yt-dlp JSON extraction on sniffed URL failed: {}. Synthesizing metadata from stream.", err);
+                            let title = infer_title_from_url(url);
+                            let synthetic = serde_json::json!({
+                                "id": "sniffed_stream",
+                                "title": title,
+                                "webpage_url": url,
+                                "url": sniffed_url_result,
+                                "extractor": "generic_hls",
+                            }).to_string();
+                            (vec![synthetic], YtDlpOutput { stdout_lines: vec![], stderr_lines: vec![], exit_code: Some(0) })
+                        }
+                    }
                 } else {
                     return Err(e);
                 }
@@ -298,7 +326,10 @@ impl YtDlpRunner {
             .next()
             .ok_or_else(|| anyhow!("yt-dlp returned no JSON output"))?;
 
-        let meta = parse_preview_metadata(&first, url)?;
+        let mut meta = parse_preview_metadata(&first, url)?;
+        if meta.stream_url.is_none() {
+            meta.stream_url = sniffed_stream_opt;
+        }
 
         Ok((meta, output))
     }
@@ -581,6 +612,45 @@ fn looks_like_json_object(s: &str) -> bool {
     t.starts_with('{') && t.ends_with('}')
 }
 
+/// Infers a human-readable title from a webpage or video URL path.
+/// E.g. `https://aether.bar/media/tmdb-movie-539972-kraven-the-hunter` -> `"Kraven The Hunter"`
+pub fn infer_title_from_url(url_str: &str) -> String {
+    if let Ok(parsed) = url::Url::parse(url_str) {
+        if let Some(path_segments) = parsed.path_segments() {
+            let segs: Vec<&str> = path_segments.filter(|s| !s.trim().is_empty()).collect();
+            if let Some(&last_seg) = segs.last() {
+                // Remove extensions like .html, .m3u8, .mp4
+                let without_ext = last_seg.split('.').next().unwrap_or(last_seg);
+                let cleaned = without_ext
+                    .replace("tmdb-movie-", "")
+                    .replace("tmdb-tv-", "")
+                    .replace("-lucifer-donghua", "")
+                    .replace('-', " ")
+                    .replace('_', " ");
+                let words: Vec<String> = cleaned
+                    .split_whitespace()
+                    .filter(|w| !w.chars().all(|c| c.is_ascii_digit())) // filter numeric IDs
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+                        }
+                    })
+                    .collect();
+                let title = words.join(" ");
+                if !title.trim().is_empty() {
+                    return title;
+                }
+            }
+        }
+        if let Some(host) = parsed.host_str() {
+            return format!("Video from {}", host);
+        }
+    }
+    "Video Stream".to_string()
+}
+
 fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<PreviewMetadata> {
     let v: Value = serde_json::from_str(json_line).map_err(|e| YtDlpError {
         kind: YtDlpErrorKind::InvalidJson,
@@ -620,7 +690,9 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
     let title = v
         .get("title")
         .and_then(|x| x.as_str())
-        .map(|s| s.to_string());
+        .map(|s| s.to_string())
+        .filter(|t| t != "master" && t != "index" && !t.trim().is_empty())
+        .or_else(|| Some(infer_title_from_url(fallback_url)));
     let uploader = v
         .get("uploader")
         .and_then(|x| x.as_str())

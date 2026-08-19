@@ -179,6 +179,30 @@ fn rebuild_with_host(url: &Url, new_host: &str) -> Option<Url> {
     Some(cloned)
 }
 
+/// Extracts the web origin (`scheme://host` or `scheme://host:port`) from a URL.
+/// E.g. `https://aether.bar/media/tmdb-...` -> `Some("https://aether.bar")`
+pub fn extract_origin(url_str: &str) -> Option<String> {
+    let parsed = Url::parse(url_str).ok()?;
+    let host = parsed.host_str()?;
+    let scheme = parsed.scheme();
+    if let Some(port) = parsed.port() {
+        Some(format!("{}://{}:{}", scheme, host, port))
+    } else {
+        Some(format!("{}://{}", scheme, host))
+    }
+}
+
+/// Derives a clean Referer URL given a source webpage URL or stream URL.
+pub fn derive_referer(source_page_url: &str, stream_url: Option<&str>) -> Option<String> {
+    if !source_page_url.is_empty() {
+        Some(source_page_url.to_string())
+    } else if let Some(stream) = stream_url {
+        extract_origin(stream)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,5 +255,29 @@ mod tests {
     fn ignores_non_http_schemes() {
         let urls = extract_urls("ftp://example.com/x https://example.com/y");
         assert_eq!(urls, vec!["https://example.com/y".to_string()]);
+    }
+
+    #[test]
+    fn extracts_origin_correctly() {
+        assert_eq!(
+            extract_origin("https://aether.bar/media/tmdb-movie-539972-kraven-the-hunter"),
+            Some("https://aether.bar".to_string())
+        );
+        assert_eq!(
+            extract_origin("http://localhost:3000/test"),
+            Some("http://localhost:3000".to_string())
+        );
+    }
+
+    #[test]
+    fn derives_referer_correctly() {
+        assert_eq!(
+            derive_referer("https://aether.bar/media/movie", Some("https://nebula.aether.cx/hls/123/master.m3u8")),
+            Some("https://aether.bar/media/movie".to_string())
+        );
+        assert_eq!(
+            derive_referer("https://example.com/video", None),
+            Some("https://example.com".to_string())
+        );
     }
 }

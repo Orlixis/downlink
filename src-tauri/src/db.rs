@@ -10,7 +10,7 @@ use uuid::Uuid;
 /// Database schema version.
 ///
 /// Bump this when introducing a new migration.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// Database handle wrapper.
 ///
@@ -122,6 +122,9 @@ pub struct DownloadRow {
 
     pub error_code: Option<String>,
     pub error_message: Option<String>,
+
+    pub stream_url: Option<String>,
+    pub referer_url: Option<String>,
 }
 
 /// Determines the per-user app data directory and returns its path.
@@ -213,6 +216,8 @@ impl Db {
         parent_id: Option<Uuid>,
         preset_id: &str,
         output_dir: &str,
+        stream_url: Option<&str>,
+        referer_url: Option<&str>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
         let now = Utc::now();
@@ -227,7 +232,8 @@ impl Db {
               preset_id, output_dir,
               final_path,
               progress_percent, bytes_downloaded, bytes_total, speed_bps, eta_seconds,
-              error_code, error_message
+              error_code, error_message,
+              stream_url, referer_url
             ) VALUES (
               ?1, ?2, ?3,
               ?4, ?5, ?6,
@@ -236,7 +242,8 @@ impl Db {
               ?8, ?9,
               NULL,
               NULL, NULL, NULL, NULL, NULL,
-              NULL, NULL
+              NULL, NULL,
+              ?10, ?11
             )
             "#,
             params![
@@ -248,7 +255,9 @@ impl Db {
                 parent_id.map(|p| p.to_string()),
                 DownloadStatus::Queued.as_str(),
                 preset_id,
-                output_dir
+                output_dir,
+                stream_url,
+                referer_url
             ],
         )?;
 
@@ -269,80 +278,13 @@ impl Db {
                   preset_id, output_dir,
                   final_path,
                   progress_percent, bytes_downloaded, bytes_total, speed_bps, eta_seconds,
-                  error_code, error_message
+                  error_code, error_message,
+                  stream_url, referer_url
                 FROM downloads
                 WHERE id = ?1
                 "#,
                 params![id.to_string()],
-                |r| {
-                    let id: String = r.get(0)?;
-                    let created_at: String = r.get(1)?;
-                    let updated_at: String = r.get(2)?;
-                    let source_url: String = r.get(3)?;
-                    let source_kind: String = r.get(4)?;
-                    let parent_id: Option<String> = r.get(5)?;
-                    let title: Option<String> = r.get(6)?;
-                    let uploader: Option<String> = r.get(7)?;
-                    let duration_seconds: Option<i64> = r.get(8)?;
-                    let thumbnail_url: Option<String> = r.get(9)?;
-                    let status: String = r.get(10)?;
-                    let phase: Option<String> = r.get(11)?;
-                    let preset_id: String = r.get(12)?;
-                    let output_dir: String = r.get(13)?;
-                    let final_path: Option<String> = r.get(14)?;
-                    let progress_percent: Option<f64> = r.get(15)?;
-                    let bytes_downloaded: Option<i64> = r.get(16)?;
-                    let bytes_total: Option<i64> = r.get(17)?;
-                    let speed_bps: Option<i64> = r.get(18)?;
-                    let eta_seconds: Option<i64> = r.get(19)?;
-                    let error_code: Option<String> = r.get(20)?;
-                    let error_message: Option<String> = r.get(21)?;
-
-                    let id = Uuid::parse_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)?;
-                    let created_at = DateTime::parse_from_rfc3339(&created_at)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?
-                        .with_timezone(&Utc);
-                    let updated_at = DateTime::parse_from_rfc3339(&updated_at)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?
-                        .with_timezone(&Utc);
-
-                    let source_kind =
-                        SourceKind::from_str(&source_kind).ok_or(rusqlite::Error::InvalidQuery)?;
-                    let parent_id = match parent_id {
-                        Some(s) => {
-                            Some(Uuid::parse_str(&s).map_err(|_| rusqlite::Error::InvalidQuery)?)
-                        }
-                        None => None,
-                    };
-
-                    let status =
-                        DownloadStatus::from_str(&status).ok_or(rusqlite::Error::InvalidQuery)?;
-
-                    Ok(DownloadRow {
-                        id,
-                        created_at,
-                        updated_at,
-                        source_url,
-                        source_kind,
-                        parent_id,
-                        title,
-                        uploader,
-                        duration_seconds,
-                        thumbnail_url,
-                        status,
-                        phase,
-                        preset_id,
-                        output_dir,
-                        final_path,
-                        progress_percent,
-                        bytes_downloaded,
-                        bytes_total,
-                        speed_bps,
-                        eta_seconds,
-                        error_code,
-                        error_message,
-                    })
-                },
+                |r| Self::row_to_download(r),
             )
             .optional()?;
 
@@ -469,6 +411,16 @@ impl Db {
         Ok(())
     }
 
+    /// Update stream URL on an existing download record.
+    pub fn update_stream_url(&mut self, id: Uuid, stream_url: &str) -> Result<()> {
+        let now = Utc::now();
+        self.conn.execute(
+            "UPDATE downloads SET stream_url = ?1, updated_at = ?2 WHERE id = ?3",
+            params![stream_url, now.to_rfc3339(), id.to_string()],
+        )?;
+        Ok(())
+    }
+
     /// Get all active downloads (not completed, canceled, or failed).
     pub fn get_active_downloads(&mut self) -> Result<Vec<DownloadRow>> {
         let mut stmt = self.conn.prepare(
@@ -481,7 +433,8 @@ impl Db {
                 preset_id, output_dir,
                 final_path,
                 progress_percent, bytes_downloaded, bytes_total, speed_bps, eta_seconds,
-                error_code, error_message
+                error_code, error_message,
+                stream_url, referer_url
             FROM downloads
             WHERE status NOT IN ('done', 'canceled')
             ORDER BY created_at DESC
@@ -508,7 +461,8 @@ impl Db {
                 preset_id, output_dir,
                 final_path,
                 progress_percent, bytes_downloaded, bytes_total, speed_bps, eta_seconds,
-                error_code, error_message
+                error_code, error_message,
+                stream_url, referer_url
             FROM downloads
             WHERE status = 'done'
             ORDER BY updated_at DESC
@@ -607,7 +561,8 @@ impl Db {
                 preset_id, output_dir,
                 final_path,
                 progress_percent, bytes_downloaded, bytes_total, speed_bps, eta_seconds,
-                error_code, error_message
+                error_code, error_message,
+                stream_url, referer_url
             FROM downloads
             WHERE parent_id = ?1
             ORDER BY created_at ASC
@@ -659,6 +614,8 @@ impl Db {
         let eta_seconds: Option<i64> = row.get(19)?;
         let error_code: Option<String> = row.get(20)?;
         let error_message: Option<String> = row.get(21)?;
+        let stream_url: Option<String> = row.get(22).ok().flatten();
+        let referer_url: Option<String> = row.get(23).ok().flatten();
 
         let id = Uuid::parse_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)?;
         let created_at = DateTime::parse_from_rfc3339(&created_at)
@@ -700,6 +657,8 @@ impl Db {
             eta_seconds,
             error_code,
             error_message,
+            stream_url,
+            referer_url,
         })
     }
 
@@ -716,23 +675,18 @@ impl Db {
         Ok(())
     }
 
-    /// Get recent log entries for a download.
-    pub fn get_log_entries(
-        &mut self,
-        download_id: Uuid,
-        limit: u32,
-    ) -> Result<Vec<(String, String, String)>> {
+    /// Retrieve all log entries for a download, ordered chronologically.
+    pub fn get_logs(&mut self, download_id: Uuid) -> Result<Vec<(String, String, String)>> {
         let mut stmt = self.conn.prepare(
             r#"
             SELECT ts, stream, line
             FROM download_logs
             WHERE download_id = ?1
-            ORDER BY id DESC
-            LIMIT ?2
+            ORDER BY id ASC
             "#,
         )?;
 
-        let rows = stmt.query_map(params![download_id.to_string(), limit], |row| {
+        let rows = stmt.query_map(params![download_id.to_string()], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?))
         })?;
 
@@ -740,7 +694,6 @@ impl Db {
         for row in rows {
             result.push(row?);
         }
-        result.reverse(); // Return in chronological order
         Ok(result)
     }
 
@@ -798,11 +751,12 @@ fn migrate(conn: &mut Connection) -> Result<()> {
 
     if current_version == 0 {
         migration_v1(conn)?;
-        set_schema_version(conn, 1)?;
+        migration_v2(conn)?;
+        set_schema_version(conn, 2)?;
+    } else if current_version < 2 {
+        migration_v2(conn)?;
+        set_schema_version(conn, 2)?;
     }
-
-    // Future:
-    // if current_version < 2 { migration_v2(conn)?; set_schema_version(conn, 2)?; }
 
     Ok(())
 }
@@ -852,6 +806,9 @@ fn migration_v1(conn: &mut Connection) -> Result<()> {
           error_code TEXT NULL,
           error_message TEXT NULL,
 
+          stream_url TEXT NULL,
+          referer_url TEXT NULL,
+
           FOREIGN KEY(parent_id) REFERENCES downloads(id) ON DELETE CASCADE
         );
 
@@ -885,5 +842,12 @@ fn migration_v1(conn: &mut Connection) -> Result<()> {
         "#,
     )?;
 
+    Ok(())
+}
+
+fn migration_v2(conn: &mut Connection) -> Result<()> {
+    // Migration v2: Add stream_url and referer_url columns for CDNs and sniffed media
+    let _ = conn.execute("ALTER TABLE downloads ADD COLUMN stream_url TEXT NULL", []);
+    let _ = conn.execute("ALTER TABLE downloads ADD COLUMN referer_url TEXT NULL", []);
     Ok(())
 }

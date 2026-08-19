@@ -251,6 +251,12 @@ pub struct AddUrlsOptions {
     thumbnail_url: Option<String>,
     #[serde(default, deserialize_with = "deserialize_null_as_none")]
     duration_seconds: Option<i64>,
+    /// Optional sniffed stream URL (e.g. .m3u8 / .mpd from Tier 3 webview).
+    #[serde(default, deserialize_with = "deserialize_null_as_none")]
+    stream_url: Option<String>,
+    /// Optional explicit referer header.
+    #[serde(default, deserialize_with = "deserialize_null_as_none")]
+    referer_url: Option<String>,
     /// Feature toggles forwarded from the UI action bar.
     #[serde(default)]
     subtitles_enabled: bool,
@@ -384,6 +390,15 @@ fn add_urls(
             p
         };
 
+        let stream_url = options.stream_url.as_deref();
+        let referer_url = options.referer_url.as_deref().or_else(|| {
+            if stream_url.is_some() {
+                Some(u.as_str())
+            } else {
+                None
+            }
+        });
+
         let id = db
             .insert_download(
                 u,
@@ -391,6 +406,8 @@ fn add_urls(
                 options.parent_id,
                 &effective_preset,
                 &options.output_dir,
+                stream_url,
+                referer_url,
             )
             .map_err(|e| format!("Failed to insert download: {e}"))?;
 
@@ -612,6 +629,8 @@ async fn expand_playlist(
                 None,
                 &options.preset_id,
                 &options.output_dir,
+                None,
+                None,
             )
             .map_err(|e| format!("Failed to insert playlist parent: {e}"))?;
 
@@ -641,6 +660,8 @@ async fn expand_playlist(
                     Some(parent_id),
                     &options.preset_id,
                     &options.output_dir,
+                    None,
+                    Some(&playlist),
                 )
                 .map_err(|e| format!("Failed to insert playlist item: {e}"))?;
 

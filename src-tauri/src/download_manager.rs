@@ -610,8 +610,28 @@ impl DownloadManager {
             let _ = event_tx.send(DownlinkEvent::DownloadStarted { id }).await;
 
             let source_url = download_info.source_url.clone();
+            let stream_url = download_info.stream_url.clone();
+            let referer_url = download_info.referer_url.clone();
             let preset_id = download_info.preset_id.clone();
             let output_dir = download_info.output_dir.clone();
+
+            let target_url = if let Some(ref s) = stream_url {
+                if !s.trim().is_empty() {
+                    s.clone()
+                } else {
+                    source_url.clone()
+                }
+            } else {
+                source_url.clone()
+            };
+
+            let effective_referer = referer_url.as_deref().or_else(|| {
+                if stream_url.is_some() {
+                    Some(source_url.as_str())
+                } else {
+                    None
+                }
+            });
 
             // ── Auto-retry with exponential backoff ───────────────────────────
             // Transient network/unknown failures get up to MAX_RETRIES attempts.
@@ -639,7 +659,8 @@ impl DownloadManager {
 
                 let res = execute_download(
                     id,
-                    &source_url,
+                    &target_url,
+                    effective_referer,
                     &preset_id,
                     &output_dir,
                     config.clone(),
@@ -875,6 +896,7 @@ enum DownloadError {
 async fn execute_download(
     id: Uuid,
     url: &str,
+    referer: Option<&str>,
     preset_id: &str,
     output_dir: &str,
     config: Arc<RwLock<DownloadConfig>>,
@@ -966,7 +988,30 @@ async fn execute_download(
         "download:[downlink] %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s %(progress._total_bytes_str)s".to_string(),
         "-o".to_string(),
         format!("{}/{}", output_dir, config_guard.default_output_template),
+        // Turbo Multi-fragment concurrent streams (Folx/IDM tier parallel chunking)
+        "--concurrent-fragments".to_string(),
+        "16".to_string(),
+        // Standard modern browser User-Agent
+        "--user-agent".to_string(),
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36".to_string(),
     ];
+
+    // Referer & Origin header propagation (bypasses CDN hotlink & 403 Forbidden protection)
+    if let Some(ref_url) = referer {
+        if !ref_url.trim().is_empty() {
+            args.push("--referer".to_string());
+            args.push(ref_url.to_string());
+            if let Some(origin) = crate::url_utils::extract_origin(ref_url) {
+                args.push("--add-header".to_string());
+                args.push(format!("Origin: {}", origin));
+            }
+        }
+    } else if let Some(origin) = crate::url_utils::extract_origin(url) {
+        args.push("--referer".to_string());
+        args.push(format!("{}/", origin));
+        args.push("--add-header".to_string());
+        args.push(format!("Origin: {}", origin));
+    }
 
     // Add preset args
     args.extend(preset.yt_dlp_args.clone());

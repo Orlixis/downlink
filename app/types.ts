@@ -69,6 +69,8 @@ export interface AddUrlsOptions {
   uploader?: string | null;
   thumbnail_url?: string | null;
   duration_seconds?: number | null;
+  stream_url?: string | null;
+  referer_url?: string | null;
   // Feature toggles
   subtitles_enabled?: boolean;
   sponsorblock_enabled?: boolean;
