@@ -276,8 +276,12 @@ mod tests {
             Some("https://aether.bar/media/movie".to_string())
         );
         assert_eq!(
-            derive_referer("https://example.com/video", None),
+            derive_referer("", Some("https://example.com/video/master.m3u8")),
             Some("https://example.com".to_string())
+        );
+        assert_eq!(
+            derive_referer("https://example.com/video", None),
+            Some("https://example.com/video".to_string())
         );
     }
 }
