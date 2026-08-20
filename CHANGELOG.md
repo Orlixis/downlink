@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.41](https://github.com/Orlixis/downlink/compare/v0.1.39...v0.1.41) (2026-08-20)
+
+
+### Features
+
+* improve yt-dlp stream sniffing with header injection, URL-based title inference, and persistent stream/referer metadata. ([f25a396](https://github.com/Orlixis/downlink/commit/f25a396a94ec36b1d45f2e8c50f5b86745aed121))
+
 ### [0.1.39](https://github.com/Orlixis/downlink/compare/v0.1.38...v0.1.39) (2026-07-22)
 
 
