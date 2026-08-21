@@ -1204,9 +1204,7 @@ async fn execute_download(
 
     let mut stderr_lines: Vec<String> = Vec::new();
     let mut final_path: Option<String> = None;
-    let mut last_raw_percent: f64 = 0.0;
     let mut reported_percent: f64 = 0.0;
-    let mut streams_completed: u8 = 0;
 
     // Progress regex for our custom template: [downlink] 50.5% 1.5MiB/s 00:30 100MiB
     let progress_re = Regex::new(r"\[downlink\]\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)").ok();
@@ -1284,44 +1282,28 @@ async fn execute_download(
                         }
 
                         // Send progress event if we parsed something
-                        if let Some(mut p) = parsed {
-                            let current_raw_percent = p.percent.unwrap_or(0.0);
-                            
-                            // Detect if a secondary stream started (e.g. separate audio track after video track on YouTube)
-                            if last_raw_percent >= 70.0 && current_raw_percent <= 30.0 {
-                                streams_completed += 1;
-                            }
-                            last_raw_percent = current_raw_percent;
-                            
-                            // For single-stream downloads (HLS m3u8, direct MP4, Twitch, etc.), display 100% of raw progress.
-                            // If a secondary audio stream begins, smoothly map it into the final 90-100% stretch.
-                            let adjusted_percent = if streams_completed == 0 {
-                                current_raw_percent
-                            } else {
-                                90.0 + (current_raw_percent * 0.1).min(10.0)
-                            };
-                            
-                            p.percent = Some(adjusted_percent);
-
-                            // Only send if percent changed significantly (avoid flooding)
-                            if (adjusted_percent - reported_percent).abs() >= 0.5 || adjusted_percent >= 99.9 {
-                                reported_percent = adjusted_percent;
-                                log::info!("Progress: {:.1}% (Raw: {:.1}%)", adjusted_percent, current_raw_percent);
-                                let _ = event_tx.send(DownlinkEvent::DownloadProgress {
-                                    id,
-                                    status: events::DownloadStatus::Downloading,
-                                    progress: Progress {
-                                        percent: p.percent,
-                                        bytes_downloaded: p.bytes_downloaded,
-                                        bytes_total: p.bytes_total,
-                                        speed_bps: p.speed_bps,
-                                        eta_seconds: p.eta_seconds,
-                                        phase: Some(Phase {
-                                            name: p.phase.clone().unwrap_or_else(|| "Downloading".to_string()),
-                                            detail: None,
-                                        }),
-                                    },
-                                }).await;
+                        if let Some(p) = parsed {
+                            if let Some(pct) = p.percent {
+                                // Only send if percent changed significantly (avoid flooding IPC)
+                                if (pct - reported_percent).abs() >= 0.2 || pct >= 99.9 {
+                                    reported_percent = pct;
+                                    log::info!("Progress: {:.1}%", pct);
+                                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                                        id,
+                                        status: events::DownloadStatus::Downloading,
+                                        progress: Progress {
+                                            percent: Some(pct),
+                                            bytes_downloaded: p.bytes_downloaded,
+                                            bytes_total: p.bytes_total,
+                                            speed_bps: p.speed_bps,
+                                            eta_seconds: p.eta_seconds,
+                                            phase: Some(Phase {
+                                                name: p.phase.clone().unwrap_or_else(|| "Downloading".to_string()),
+                                                detail: None,
+                                            }),
+                                        },
+                                    }).await;
+                                }
                             }
                         }
 
