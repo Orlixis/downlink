@@ -59,11 +59,18 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Queue panel width — persisted in localStorage
-  const [queueWidth, setQueueWidth] = useState(() => {
-    if (typeof window === "undefined") return 300;
-    return parseInt(localStorage.getItem("downlink:queue-width") ?? "300", 10);
-  });
+  // Queue panel width — persisted in localStorage safely after mount to avoid hydration mismatch
+  const [queueWidth, setQueueWidth] = useState(300);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("downlink:queue-width");
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= 260 && parsed <= 480) {
+        setQueueWidth(parsed);
+      }
+    }
+  }, []);
 
   // Clipboard URL banner — detected on window focus, dismissed per URL
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
@@ -1063,7 +1070,7 @@ export default function Home() {
           minWidth={260}
           maxWidth={480}
         />
-        <div id="download-queue-container" style={{ width: queueWidth, minWidth: queueWidth, maxWidth: queueWidth }} className="flex-shrink-0">
+        <div id="download-queue-container" suppressHydrationWarning style={{ width: queueWidth, minWidth: queueWidth, maxWidth: queueWidth }} className="flex-shrink-0">
         <DownloadQueue
           queue={downlink.queue}
           history={downlink.history}
