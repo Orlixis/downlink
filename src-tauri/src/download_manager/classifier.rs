@@ -48,7 +48,10 @@ pub fn classify_error(stderr: &str) -> (ErrorCode, String, Vec<Action>) {
 
     if stderr_lower.contains("unsupported url")
         || stderr_lower.contains("no video formats")
-        || stderr_lower.contains("extractor")
+        || stderr_lower.contains("extractorerror")
+        || stderr_lower.contains("extractor error")
+        || stderr_lower.contains("unable to extract")
+        || stderr_lower.contains("please report this issue")
     {
         return (
             ErrorCode::ExtractorOutdated,

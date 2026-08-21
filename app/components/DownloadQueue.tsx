@@ -253,7 +253,7 @@ export function DownloadQueue({
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-semibold leading-none ${
                   showHistory
-                    ? "bg-blue-600/30 text-white"
+                    ? "bg-blue-500 text-white"
                     : "bg-white/10 text-zinc-300"
                 }`}
               >
@@ -407,7 +407,7 @@ export function DownloadQueue({
 
       {/* ── Footer: clear button ───────────────────────── */}
       {!isEmpty && (
-        <div className="border-t border-white/[0.06] p-2 bg-white/[0.01]">
+        <div className="border-t border-white/[0.06] p-2 ">
           <button
             type="button"
             onClick={showHistory ? onClearHistory : onClearQueue}

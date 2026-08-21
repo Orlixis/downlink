@@ -133,16 +133,7 @@ pub async fn execute_download(
         if !ref_url.trim().is_empty() {
             args.push("--referer".to_string());
             args.push(ref_url.to_string());
-            if let Some(origin) = crate::url_utils::extract_origin(ref_url) {
-                args.push("--add-header".to_string());
-                args.push(format!("Origin: {}", origin));
-            }
         }
-    } else if let Some(origin) = crate::url_utils::extract_origin(url) {
-        args.push("--referer".to_string());
-        args.push(format!("{}/", origin));
-        args.push("--add-header".to_string());
-        args.push(format!("Origin: {}", origin));
     }
 
     args.extend(preset.yt_dlp_args.clone());

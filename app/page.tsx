@@ -175,6 +175,8 @@ export default function Home() {
       }
 
       let hasAnyIds = false;
+      const previewMap = new Map(allPreviews.map((p) => [p.url, p.data]));
+
       for (const [groupPreset, groupUrls] of qualityGroups) {
         let effectivePreset = groupPreset;
         if (trimEnabled && previewDuration > 0 && !previewData?.is_playlist) {
@@ -183,20 +185,24 @@ export default function Home() {
         if (embedMetaEnabled) {
           effectivePreset += "+meta";
         }
-        const result = await downlink.addUrls(groupUrls.join("\n"), {
-          preset_id: effectivePreset,
-          output_dir: destination,
-          parent_id: null,
-          source_kind: "single",
-          title: allPreviews.length === 1 ? previewData?.title ?? null : null,
-          uploader: allPreviews.length === 1 ? previewData?.uploader ?? null : null,
-          thumbnail_url: allPreviews.length === 1 ? previewData?.thumbnail_url ?? null : null,
-          duration_seconds: allPreviews.length === 1 ? previewData?.duration_seconds ?? null : null,
-          stream_url: allPreviews.length === 1 ? previewData?.stream_url ?? null : null,
-          subtitles_enabled: subtitlesEnabled,
-          sponsorblock_enabled: sponsorBlockEnabled,
-        });
-        if (result.ids.length > 0) hasAnyIds = true;
+
+        for (const singleUrl of groupUrls) {
+          const itemMeta = previewMap.get(singleUrl) || (allPreviews.length === 1 ? previewData : null);
+          const result = await downlink.addUrls(singleUrl, {
+            preset_id: effectivePreset,
+            output_dir: destination,
+            parent_id: null,
+            source_kind: "single",
+            title: itemMeta?.title ?? null,
+            uploader: itemMeta?.uploader ?? null,
+            thumbnail_url: itemMeta?.thumbnail_url ?? null,
+            duration_seconds: itemMeta?.duration_seconds ?? null,
+            stream_url: itemMeta?.stream_url ?? null,
+            subtitles_enabled: subtitlesEnabled,
+            sponsorblock_enabled: sponsorBlockEnabled,
+          });
+          if (result.ids.length > 0) hasAnyIds = true;
+        }
       }
 
       if (settings?.general.auto_start !== false && hasAnyIds) {
