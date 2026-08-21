@@ -191,7 +191,7 @@ export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDrop
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
     const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-    const clickedCore = dist < 60;
+    const clickedCore = dist <= 85;
 
     if (clipboardUrl && onDropPackage && !clickedCore) {
       const urls = clipboardUrl.split(/\r?\n/).filter(line => line.trim().includes("http"));

@@ -72,16 +72,18 @@ export function useGravityCursor(
       const dy = cy - p.y;
       const dist = Math.hypot(dx, dy);
 
-      // Event Horizon check - only if user has moved the mouse
-      if (hasMovedRef.current && dist < 35 && !absorbedRef.current) {
+      // Event Horizon check - instantly absorb when package reaches/touches the outer horizon circle
+      // Outer vortex disc border is at radius ~70-85px.
+      const EVENT_HORIZON_RADIUS = 65;
+      if (hasMovedRef.current && dist <= EVENT_HORIZON_RADIUS && !absorbedRef.current) {
         absorbedRef.current = true;
         onAbsorbed();
       }
 
-      // If absorbed, pull it in visually if needed (though BlackHoleOverlay hides it)
+      // If absorbed, rapidly suck into singularity center
       if (absorbedRef.current) {
-        p.x += (cx - p.x) * 0.2;
-        p.y += (cy - p.y) * 0.2;
+        p.x += (cx - p.x) * 0.35;
+        p.y += (cy - p.y) * 0.35;
       }
 
       p.x += p.vx;
