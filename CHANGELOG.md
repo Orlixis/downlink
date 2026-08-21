@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.43](https://github.com/Orlixis/downlink/compare/v0.1.42...v0.1.43) (2026-08-21)
+
+
+### Features
+
+* implement comprehensive UI components for settings, preview, and download management ([cd8c61c](https://github.com/Orlixis/downlink/commit/cd8c61c1739e4a5db553f9a0de5767a2d546b173))
+
+
+### Bug Fixes
+
+* **downloader:** ensure 1:1 raw progress sync between yt-dlp and UI card ([07ed811](https://github.com/Orlixis/downlink/commit/07ed81181585dffd4bad65b70add74275a1595a3))
+* **frontend:** resolve Next.js hydration mismatch on queueWidth localStorage reading ([203a507](https://github.com/Orlixis/downlink/commit/203a507713a6508e176f661d748c83d106cde72e))
+
 ### [0.1.42](https://github.com/Orlixis/downlink/compare/v0.1.41...v0.1.42) (2026-08-21)
 
 
