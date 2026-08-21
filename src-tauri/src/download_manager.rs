@@ -4,7 +4,7 @@
 //! and lifecycle management (start, stop, cancel, retry).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -734,12 +734,48 @@ impl DownloadManager {
             // Update DB based on result
             let mut db_guard = db.lock().await;
             match result {
-                Ok(final_path) => {
+                Ok(mut final_path) => {
+                    let ffmpeg_bin = {
+                        let cfg = config.read().await;
+                        cfg.ffmpeg_path.clone()
+                    };
+
+                    if let (Some(ref bin), Some(ref path_str)) = (&ffmpeg_bin, &final_path) {
+                        let path = PathBuf::from(path_str);
+                        if path.exists() {
+                            if let Ok(fixed_path) = fixup_disguised_hls_stream(bin, &path).await {
+                                final_path = Some(fixed_path.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+
+                    // Auto-extract thumbnail if item had no thumbnail
+                    if let (Some(ref bin), Some(ref path_str)) = (&ffmpeg_bin, &final_path) {
+                        let path = PathBuf::from(path_str);
+                        if path.exists() && download_info.thumbnail_url.is_none() {
+                            if let Some(thumb_data) = extract_video_thumbnail_base64(bin, &path).await {
+                                let _ = db_guard.update_metadata(id, None, None, None, Some(&thumb_data));
+                                let _ = event_tx.send(DownlinkEvent::MetadataReady {
+                                    id,
+                                    info: MediaInfo {
+                                        title: None,
+                                        uploader: None,
+                                        duration_seconds: None,
+                                        thumbnail_url: Some(thumb_data),
+                                        webpage_url: None,
+                                    },
+                                }).await;
+                            }
+                        }
+                    }
+
+                    let final_path_str = final_path.unwrap_or_default();
                     let _ = db_guard.set_status(id, DownloadStatus::Done, Some("Completed"));
+                    let _ = db_guard.set_final_path(id, &final_path_str);
                     let _ = event_tx
                         .send(DownlinkEvent::DownloadCompleted {
                             id,
-                            final_path: final_path.unwrap_or_default(),
+                            final_path: final_path_str,
                         })
                         .await;
                 }
@@ -1625,6 +1661,71 @@ fn classify_error(stderr: &str) -> (ErrorCode, String, Vec<Action>) {
             },
         ],
     )
+}
+
+/// Inspects an output video file and automatically remuxes disguised MPEG-TS streams
+/// (e.g. HLS streams with PNG/JPEG headers or TS sync bytes in MP4 container) to a clean MP4 file.
+async fn fixup_disguised_hls_stream(ffmpeg_path: &Path, file_path: &Path) -> Result<PathBuf, ()> {
+    let temp_fixed = file_path.with_extension("fixed.mp4");
+
+    let mut cmd = tokio::process::Command::new(ffmpeg_path);
+    cmd.args(&[
+        "-v", "error",
+        "-f", "mpegts",
+        "-i", &file_path.to_string_lossy(),
+        "-c", "copy",
+        "-y",
+        &temp_fixed.to_string_lossy(),
+    ]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+
+    if let Ok(status) = cmd.status().await {
+        if status.success() && temp_fixed.exists() {
+            if let Ok(meta) = tokio::fs::metadata(&temp_fixed).await {
+                if meta.len() > 1024 * 1024 {
+                    let _ = tokio::fs::rename(&temp_fixed, file_path).await;
+                    log::info!("Successfully remuxed disguised MPEG-TS stream for {:?}", file_path);
+                    return Ok(file_path.to_path_buf());
+                }
+            }
+            let _ = tokio::fs::remove_file(&temp_fixed).await;
+        }
+    }
+
+    Ok(file_path.to_path_buf())
+}
+
+/// Extracts a single frame from the video as a JPEG base64 data URL.
+async fn extract_video_thumbnail_base64(ffmpeg_path: &Path, file_path: &Path) -> Option<String> {
+    for timestamp in &["00:00:03", "00:00:01", "00:00:00"] {
+        let mut cmd = tokio::process::Command::new(ffmpeg_path);
+        cmd.args(&[
+            "-ss", timestamp,
+            "-i", &file_path.to_string_lossy(),
+            "-vframes", "1",
+            "-vf", "scale=480:-1",
+            "-q:v", "3",
+            "-f", "image2pipe",
+            "-vcodec", "mjpeg",
+            "pipe:1",
+        ]);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::null());
+
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+
+        if let Ok(output) = cmd.output().await {
+            if output.status.success() && !output.stdout.is_empty() {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&output.stdout);
+                return Some(format!("data:image/jpeg;base64,{}", b64));
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

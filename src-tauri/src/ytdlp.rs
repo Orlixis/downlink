@@ -747,7 +747,7 @@ fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Preview
         .get("title")
         .and_then(|x| x.as_str())
         .map(|s| s.to_string())
-        .filter(|t| t != "master" && t != "index" && !t.trim().is_empty())
+        .filter(|t| !is_token_or_hash(t))
         .or_else(|| Some(infer_title_from_url(fallback_url)));
     let uploader = v
         .get("uploader")

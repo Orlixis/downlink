@@ -92,6 +92,7 @@ name = "app"
 version = "0.1.41"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "directories",
  "dirs 5.0.1",

@@ -247,7 +247,19 @@ export function DownloadItem({
             {/* Title / URL */}
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12px] font-medium text-zinc-100 leading-snug">
-                {item.title || "Fetching info…"}
+                {item.title && item.title.trim() && item.title !== "Fetching info…"
+                  ? item.title
+                  : item.final_path
+                  ? item.final_path.split(/[/\\]/).pop()?.replace(/\.[^/.]+$/, "") || "Video Download"
+                  : item.source_url
+                  ? (() => {
+                      try {
+                        return `Video from ${new URL(item.source_url).hostname}`;
+                      } catch {
+                        return "Video Stream";
+                      }
+                    })()
+                  : "Video Download"}
               </p>
               {item.uploader && (
                 <p className="truncate text-[10px] text-zinc-500 leading-snug">

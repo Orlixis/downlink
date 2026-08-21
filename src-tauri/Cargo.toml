@@ -53,6 +53,7 @@ anyhow = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip", "brotli", "multipart", "stream"] }
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
 
 # --- URL parsing (multi-paste, validation) ---
 url = "2"
