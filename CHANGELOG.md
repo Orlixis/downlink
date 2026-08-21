@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.46](https://github.com/Orlixis/downlink/compare/v0.1.45...v0.1.46) (2026-08-21)
+
+
+### Features
+
+* add update tracking state to hooks and update configuration for improved auto-updater reliability ([6692a7e](https://github.com/Orlixis/downlink/commit/6692a7e8471e35ded0c3694476aa8dab6c290eeb))
+
 ### [0.1.45](https://github.com/Orlixis/downlink/compare/v0.1.44...v0.1.45) (2026-08-21)
 
 
