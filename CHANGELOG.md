@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.44](https://github.com/Orlixis/downlink/compare/v0.1.43...v0.1.44) (2026-08-21)
+
+
+### Features
+
+* add clipboard banner for URL suggestions and refactor preview animations for smoother transitions ([60df133](https://github.com/Orlixis/downlink/commit/60df133aa0f497d3e9ec293ded3c8e9cfdf9e919))
+* add Whisper-based audio transcription UI for individual downloads and refine Footer status indicators ([fc23a57](https://github.com/Orlixis/downlink/commit/fc23a57ca0cf90aad67ab78064763d009e7acf62))
+
 ### [0.1.43](https://github.com/Orlixis/downlink/compare/v0.1.42...v0.1.43) (2026-08-21)
 
 
