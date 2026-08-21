@@ -17,10 +17,25 @@ import type {
   WhisperModel,
 } from "../types";
 
+export interface UpdateAvailableState {
+  available: boolean;
+  latestVersion: string | null;
+  releaseNotes: string | null;
+  dismissed: boolean;
+  downloading: boolean;
+  downloadProgress: {
+    downloaded: number;
+    total: number | null;
+  } | null;
+  readyToInstall: boolean;
+  error: string | null;
+}
+
 export function createDownlinkActions(
   refreshQueue: () => Promise<void>,
   refreshHistory: () => Promise<void>,
-  setLastError: (err: string | null) => void
+  setLastError: (err: string | null) => void,
+  setUpdateAvailable?: React.Dispatch<React.SetStateAction<UpdateAvailableState>>
 ) {
   const addUrls = async (
     urlsText: string,
@@ -169,7 +184,20 @@ export function createDownlinkActions(
 
   const checkAppUpdate = async (): Promise<AppUpdateInfo> => {
     try {
-      return await invoke<AppUpdateInfo>("check_app_update");
+      const info = await invoke<AppUpdateInfo>("check_app_update");
+      if (setUpdateAvailable) {
+        setUpdateAvailable({
+          available: info.available,
+          latestVersion: info.latest_version,
+          releaseNotes: info.release_notes,
+          dismissed: false,
+          downloading: false,
+          downloadProgress: null,
+          readyToInstall: false,
+          error: null,
+        });
+      }
+      return info;
     } catch (e) {
       setLastError(String(e));
       throw e;
@@ -178,10 +206,33 @@ export function createDownlinkActions(
 
   const installAppUpdate = async (): Promise<void> => {
     try {
+      if (setUpdateAvailable) {
+        setUpdateAvailable((prev) => ({
+          ...prev,
+          downloading: true,
+          error: null,
+        }));
+      }
       await invoke("install_app_update");
+      if (setUpdateAvailable) {
+        setUpdateAvailable((prev) => ({
+          ...prev,
+          downloading: false,
+          readyToInstall: true,
+        }));
+      }
+      toast.success("Update downloaded and ready to apply on restart.");
     } catch (e) {
-      setLastError(String(e));
-      toast.error(String(e));
+      const msg = String(e);
+      setLastError(msg);
+      if (setUpdateAvailable) {
+        setUpdateAvailable((prev) => ({
+          ...prev,
+          downloading: false,
+          error: msg,
+        }));
+      }
+      toast.error(msg);
       throw e;
     }
   };

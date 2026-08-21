@@ -3,37 +3,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  AddUrlsOptions,
-  AddUrlsResult,
   AppUpdateInfo,
-  ExpandPlaylistOptions,
-  ExpandPlaylistResult,
-  FetchMetadataOptions,
-  FetchMetadataResult,
-  PreviewPlaylistResult,
-  PresetInfo,
   QueueItem,
-  ToolchainStatus,
   UserSettings,
-  WindowState,
   WhisperModel,
 } from "../types";
-import { createDownlinkActions } from "./useDownlinkActions";
+import { createDownlinkActions, type UpdateAvailableState } from "./useDownlinkActions";
 import { useDownlinkEvents } from "./useDownlinkEvents";
 
-export interface UpdateAvailableState {
-  available: boolean;
-  latestVersion: string | null;
-  releaseNotes: string | null;
-  dismissed: boolean;
-  downloading: boolean;
-  downloadProgress: {
-    downloaded: number;
-    total: number | null;
-  } | null;
-  readyToInstall: boolean;
-  error: string | null;
-}
+export type { UpdateAvailableState };
 
 export type DownlinkActions = ReturnType<typeof createDownlinkActions>;
 
@@ -79,18 +57,18 @@ export function useDownlink(): UseDownlinkReturn {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       setIsTauri(true);
 
-      import("@tauri-apps/api/app")
-        .then(({ getVersion }) => {
-          getVersion()
-            .then((v) => {
-              if (v) setAppVersion(v);
-            })
-            .catch(() => {
-              setAppVersion("0.1.42");
-            });
+      invoke<string>("get_app_version")
+        .then((v) => {
+          if (v) setAppVersion(v);
         })
         .catch(() => {
-          setAppVersion("0.1.42");
+          import("@tauri-apps/api/app")
+            .then(({ getVersion }) => {
+              getVersion().then((v) => {
+                if (v) setAppVersion(v);
+              });
+            })
+            .catch(() => {});
         });
 
       invoke<{
@@ -103,8 +81,34 @@ export function useDownlink(): UseDownlinkReturn {
           setIsReady(true);
         })
         .catch(() => {});
-    } else {
-      setAppVersion("0.1.42");
+
+      // Check app update in background
+      setTimeout(() => {
+        invoke<AppUpdateInfo>("check_app_update")
+          .then((info) => {
+            if (info.available) {
+              setUpdateAvailable({
+                available: true,
+                latestVersion: info.latest_version,
+                releaseNotes: info.release_notes,
+                dismissed: false,
+                downloading: false,
+                downloadProgress: null,
+                readyToInstall: false,
+                error: null,
+              });
+            } else {
+              setUpdateAvailable((prev) => ({
+                ...prev,
+                available: false,
+                latestVersion: null,
+              }));
+            }
+          })
+          .catch((e) => {
+            console.debug("[Downlink] Initial update check:", e);
+          });
+      }, 2500);
     }
   }, []);
 
@@ -174,7 +178,8 @@ export function useDownlink(): UseDownlinkReturn {
   const actions = createDownlinkActions(
     refreshQueue,
     refreshHistory,
-    setLastError
+    setLastError,
+    setUpdateAvailable
   );
 
   return {
