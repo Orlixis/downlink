@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.47](https://github.com/Orlixis/downlink/compare/v0.1.46...v0.1.47) (2026-08-21)
+
+
+### Features
+
+* implement multi-preview card system with compact quality selection and background continuity commands ([e219e8d](https://github.com/Orlixis/downlink/commit/e219e8d8a7c683a5b759cae3cfe1cfa5c075e81a))
+
 ### [0.1.46](https://github.com/Orlixis/downlink/compare/v0.1.45...v0.1.46) (2026-08-21)
 
 
