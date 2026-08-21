@@ -62,6 +62,13 @@ export function OrbitingPackage({
         // Update polar coordinates based on new cartesian coords
         s.radius = Math.hypot(s.x - centerX, s.y - centerY);
         s.angle = Math.atan2(s.y - centerY, s.x - centerX);
+
+        // Instant absorb if dragged to touch horizon border
+        if (s.radius <= 85 && !s.isAbsorbed) {
+          s.isAbsorbed = true;
+          onAbsorb(id, url);
+          return;
+        }
       } else {
         // Calculate distance to mouse for magnetic slowdown
         const distToMouse = Math.hypot(s.mousePos.x - s.x, s.mousePos.y - s.y);
@@ -147,8 +154,8 @@ export function OrbitingPackage({
     state.current.isDragging = false;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     
-    // Check if dropped directly into core
-    if (state.current.radius < 60 && !state.current.isAbsorbed) {
+    // Check if dropped directly into horizon or core
+    if (state.current.radius <= 85 && !state.current.isAbsorbed) {
       state.current.isAbsorbed = true;
       onAbsorb(id, url);
     }

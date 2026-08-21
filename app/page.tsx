@@ -250,14 +250,14 @@ export default function Home() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {(isDragging || (clipboardUrl && !urlInput.trim()) || orbitingUrls.length > 0) && (
+      {(isDragging || (clipboardUrl && (!urlInput.trim() || !urlInput.includes(clipboardUrl))) || orbitingUrls.length > 0) && (
         <BlackHoleOverlay
           mode={isDragging ? "drag" : "clipboard"}
           clipboardUrl={clipboardUrl}
           orbitingUrls={orbitingUrls}
           onDropPackage={(x, y, urls) => {
             addOrbitingUrls(urls, x, y);
-            if (clipboardUrl) dismissClipboardUrl(clipboardUrl);
+            if (clipboardUrl) dismissClipboardUrl(clipboardUrl, false);
           }}
           onAbsorb={(url) => {
             const absorbed = url || clipboardUrl;
@@ -267,13 +267,13 @@ export default function Home() {
                 if (prev.includes(absorbed)) return prev;
                 return `${prev.trim()}\n${absorbed}`;
               });
-              dismissClipboardUrl(absorbed);
+              dismissClipboardUrl(absorbed, true);
               removeOrbitingUrl(absorbed);
             }
             inputRef.current?.focus();
           }}
           onDismiss={() => {
-            if (clipboardUrl) dismissClipboardUrl(clipboardUrl);
+            if (clipboardUrl) dismissClipboardUrl(clipboardUrl, false);
           }}
         />
       )}
