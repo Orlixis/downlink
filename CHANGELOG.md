@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.42](https://github.com/Orlixis/downlink/compare/v0.1.41...v0.1.42) (2026-08-21)
+
+
+### Features
+
+* add automatic cleanup for stale temporary files and remove task-specific temp directories upon completion or cancellation ([35604ef](https://github.com/Orlixis/downlink/commit/35604efc8f282b0f4927bbe6cbd2a8500e7fbcfb))
+* improve title inference by filtering metadata tokens and decoding base64-encoded URL segments ([b795398](https://github.com/Orlixis/downlink/commit/b7953983ddbec3f0b8b8bc0cd64356229abfc601))
+
+
+### Bug Fixes
+
+* **downloader:** auto-remux disguised HLS streams, extract video poster thumbnails, and sanitize base64 titles ([fe10c36](https://github.com/Orlixis/downlink/commit/fe10c3657675a501720325aed1e85215ceb137b8))
+* **downloader:** enforce filename trimming and clean title template to prevent [Errno 63] File name too long ([2db39ca](https://github.com/Orlixis/downlink/commit/2db39ca4c6295defdbf20f5dbf4b98295924251d))
+* **downloader:** route fragments to temp staging directory and fix single-stream progress calculation ([68ec538](https://github.com/Orlixis/downlink/commit/68ec53824a5b624a822d3d9eafd0c5a5c54acc59))
+* **downloader:** task-isolated temp directories with automatic cleanup on completion, cancellation, and startup ([8f0c822](https://github.com/Orlixis/downlink/commit/8f0c822ed1be43a908ea2efccc09996332dd71c9))
+
 ### [0.1.41](https://github.com/Orlixis/downlink/compare/v0.1.39...v0.1.41) (2026-08-20)
 
 
