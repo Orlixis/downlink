@@ -5,7 +5,7 @@ export function normalizeBareUrls(text: string): string {
     .split(/(\s+)/)
     .map((part) => {
       if (!part || /^\s+$/.test(part)) return part;
-      if (/^https?:\/\//i.test(part)) return part;
+      if (/^https?:\/\//i.test(part) || /^magnet:\?/i.test(part)) return part;
       if (
         /^[a-zA-Z0-9][a-zA-Z0-9\-]*(?:\.[a-zA-Z0-9\-]+)*\.[a-zA-Z]{2,}(?:\/[^\s]*)?$/.test(
           part

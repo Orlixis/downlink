@@ -17,7 +17,6 @@ import { ResizableDivider } from "./components/ResizableDivider";
 import { UpdateModal } from "./components/UpdateModal";
 import { TrimModal } from "./components/TrimModal";
 import { BlackHoleOverlay } from "./components/BlackHoleOverlay";
-import { ClipboardBanner } from "./components/ClipboardBanner";
 import { EditTaskModal } from "./components/downloads";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
@@ -276,19 +275,19 @@ export default function Home() {
       />
 
       {clipboardUrl && !urlInput.trim() && (
-        <div className="px-4 pt-2">
-          <ClipboardBanner
-            url={clipboardUrl}
-            onAccept={() => {
-              setUrlInput(clipboardUrl);
-              dismissClipboardUrl(clipboardUrl);
-              inputRef.current?.focus();
-            }}
-            onDismiss={() => {
-              dismissClipboardUrl(clipboardUrl);
-            }}
-          />
-        </div>
+        <BlackHoleOverlay
+          mode="clipboard"
+          clipboardUrl={clipboardUrl}
+          onAbsorb={(url) => {
+            const absorbed = url || clipboardUrl;
+            setUrlInput(absorbed);
+            dismissClipboardUrl(absorbed);
+            inputRef.current?.focus();
+          }}
+          onDismiss={() => {
+            dismissClipboardUrl(clipboardUrl);
+          }}
+        />
       )}
 
       <div className={`flex flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-hidden"}`}>
@@ -320,6 +319,16 @@ export default function Home() {
                     const next = new Map(prev);
                     if (q === "default") next.delete(url);
                     else next.set(url, q);
+                    return next;
+                  })
+                }
+                onSelectQualityForAll={(fmt) =>
+                  setSelectedQualityPerUrl((prev) => {
+                    const next = new Map(prev);
+                    for (const p of allPreviews) {
+                      if (fmt === "default") next.delete(p.url);
+                      else next.set(p.url, fmt);
+                    }
                     return next;
                   })
                 }

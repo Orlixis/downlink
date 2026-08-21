@@ -1,3 +1,4 @@
+pub mod continuity;
 pub mod downloads;
 pub mod metadata;
 pub mod settings;
@@ -5,6 +6,7 @@ pub mod system;
 pub mod tools;
 pub mod types;
 
+pub use self::continuity::{get_nearby_devices, handoff_download, DiscoveredDevice, HandoffPayload, HandoffResult};
 pub use self::downloads::{
     add_urls, cancel_download, clean_missing_downloads, clear_history, clear_queue, get_history,
     get_queue, remove_download, retry_download, start_all_downloads, start_download,

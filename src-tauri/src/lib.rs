@@ -384,6 +384,9 @@ pub fn run() {
             // AI Transcription
             commands::tools::check_whisper,
             commands::tools::transcribe_file,
+            // Cross-device Continuity
+            commands::continuity::get_nearby_devices,
+            commands::continuity::handoff_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

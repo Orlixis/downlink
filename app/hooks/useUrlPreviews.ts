@@ -52,7 +52,7 @@ export function useUrlPreviews({
     }
 
     const normalized = normalizeBareUrls(deferredUrlInput);
-    const tokens = normalized.match(/https?:\/\/[^\s]+/g) ?? [];
+    const tokens = normalized.match(/(?:https?:\/\/|magnet:\?)[^\s]+/gi) ?? [];
     const seen = new Set<string>();
     const urls: string[] = [];
     const ranges: { pattern: string; urls: string[] }[] = [];
@@ -121,6 +121,42 @@ export function useUrlPreviews({
   const fetchPreviewForUrl = async (url: string) => {
     if (fetchedUrlsRef.current.has(url)) return;
     fetchedUrlsRef.current.add(url);
+
+    if (url.toLowerCase().startsWith("magnet:?")) {
+      try {
+        const rawParams = url.substring(8);
+        const params = new URLSearchParams(rawParams);
+        const dn = params.get("dn") || params.get("xt") || "Torrent Stream";
+        const title = decodeURIComponent(dn).replace(/\+/g, " ");
+        setUrlPreviews((prev) => {
+          const next = new Map(prev);
+          next.set(url, {
+            url,
+            loading: false,
+            data: {
+              id: url,
+              url,
+              title,
+              uploader: "BitTorrent P2P",
+              duration_seconds: null,
+              thumbnail_url: null,
+              is_playlist: false,
+              stream_url: null,
+              filesize_bytes: null,
+              playlist_title: null,
+              playlist_count_hint: null,
+              available_qualities: [],
+            },
+            error: null,
+            presetId,
+          });
+          return next;
+        });
+        return;
+      } catch (e) {
+        console.debug("Failed parsing magnet metadata:", e);
+      }
+    }
 
     setUrlPreviews((prev) => {
       const next = new Map(prev);

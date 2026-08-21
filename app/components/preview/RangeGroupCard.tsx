@@ -1,44 +1,49 @@
 "use client";
 
-import { Hash, ListVideo } from "lucide-react";
+import { Hash } from "lucide-react";
 
-interface RangeGroupCardProps {
+interface RangeGroup {
   pattern: string;
   urls: string[];
 }
 
-export function RangeGroupCard({ pattern, urls }: RangeGroupCardProps) {
-  return (
-    <div className="w-full max-w-lg mx-auto rounded-2xl bg-zinc-900/90 p-4 ring-1 ring-white/10 shadow-xl backdrop-blur-md">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400">
-            <Hash className="h-4 w-4" />
-          </div>
-          <div>
-            <h4 className="text-xs font-semibold text-zinc-100">
-              Batch Pattern Range
-            </h4>
-            <p className="text-[10px] text-zinc-400 font-mono">{pattern}</p>
-          </div>
-        </div>
-        <span className="rounded-full bg-blue-500/20 px-2.5 py-0.5 text-[10px] font-medium text-blue-300">
-          {urls.length} URLs
-        </span>
-      </div>
+interface RangeGroupCardProps {
+  group: RangeGroup;
+  startIndex: number;
+}
 
-      <div className="mt-3 max-h-32 overflow-y-auto rounded-lg bg-zinc-950/60 p-2 space-y-1 font-mono text-[10px] text-zinc-400 border border-zinc-800/80">
-        {urls.slice(0, 5).map((url, i) => (
-          <div key={i} className="truncate">
-            {url}
-          </div>
-        ))}
-        {urls.length > 5 && (
-          <div className="text-zinc-600 italic">
-            + {urls.length - 5} more items...
-          </div>
-        )}
+export function RangeGroupCard({ group, startIndex }: RangeGroupCardProps) {
+  const rangeMatch = /\[(\d+)-(\d+)\]/.exec(group.pattern);
+  const from = rangeMatch ? rangeMatch[1] : "?";
+  const to = rangeMatch ? rangeMatch[2] : "?";
+  let displayPattern = group.pattern;
+  try {
+    displayPattern = group.pattern.replace(/^https?:\/\//, "");
+  } catch {
+    /* keep */
+  }
+
+  return (
+    <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-2.5 ring-1 ring-blue-500/10 w-full">
+      <div className="flex items-center gap-2.5">
+        <span className="w-5 flex-shrink-0 text-right text-[10px] tabular-nums text-zinc-600">
+          {startIndex}
+        </span>
+        <div className="flex h-10 w-[72px] flex-shrink-0 items-center justify-center rounded-lg bg-blue-500/15">
+          <Hash className="h-4 w-4 text-blue-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-blue-300">
+            Range &middot; {group.urls.length} episodes
+          </p>
+          <p className="text-[10px] text-zinc-500 mt-0.5">
+            Episodes {from} &rarr; {to}
+          </p>
+        </div>
       </div>
+      <p className="ml-[calc(1.25rem+0.625rem+72px+0.625rem)] mt-1.5 truncate rounded bg-zinc-900/60 px-2 py-1 font-mono text-[9px] text-zinc-500">
+        {displayPattern}
+      </p>
     </div>
   );
 }

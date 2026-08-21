@@ -29,9 +29,9 @@ pub fn extract_urls(text: &str) -> Vec<String> {
     // - https://example.com
     // - https://example.com/foo?bar=baz
     // - https://example.com/foo),   -> will be cleaned by `trim_trailing_punct`
-    let re = match Regex::new(r"https?://[^\s]+") {
+    let re = match Regex::new(r"(?i)(https?://[^\s]+|magnet:\?[^\s]+)") {
         Ok(r) => r,
-        Err(_) => return out, // If regex fails to compile (shouldn't), fail safely.
+        Err(_) => return out,
     };
 
     for m in re.find_iter(text) {
@@ -42,7 +42,11 @@ pub fn extract_urls(text: &str) -> Vec<String> {
             continue;
         }
 
-        if let Some(normalized) = normalize_http_url(cleaned) {
+        if cleaned.to_ascii_lowercase().starts_with("magnet:?") {
+            if seen.insert(cleaned.to_string()) {
+                out.push(cleaned.to_string());
+            }
+        } else if let Some(normalized) = normalize_http_url(cleaned) {
             if seen.insert(normalized.clone()) {
                 out.push(normalized);
             }

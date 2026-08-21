@@ -181,11 +181,19 @@ export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDrop
       }
     }
 
-    if (clipboardUrl && onDropPackage && !clickedCore) {
-      const urls = clipboardUrl.split(/\r?\n/).filter(line => line.trim().includes("http"));
-      onDropPackage(e.clientX, e.clientY, urls);
-    } else if (clipboardUrl && clickedCore) {
-      handleAbsorb(clipboardUrl);
+    if (isDrag) {
+      // Drag mode: drop orbiting packages at cursor position
+      if (clipboardUrl && onDropPackage && !clickedCore) {
+        const urls = clipboardUrl.split(/\r?\n/).filter(line => line.trim().includes("http"));
+        onDropPackage(e.clientX, e.clientY, urls);
+      }
+    } else {
+      // Clipboard mode: click core = absorb, click outside = dismiss
+      if (clickedCore) {
+        handleAbsorb(clipboardUrl ?? undefined);
+      } else {
+        handleDismiss();
+      }
     }
   };
 
