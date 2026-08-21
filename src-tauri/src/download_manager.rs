@@ -1057,7 +1057,7 @@ async fn execute_download(
 
     // Ensure hidden staging temp directory exists for fragments
     let temp_staging_dir = crate::db::app_data_dir()
-        .map(|d| d.join("tmp"))
+        .map(|d| d.join("tmp").join(id.to_string()))
         .unwrap_or_else(|_| PathBuf::from(output_dir));
     let _ = tokio::fs::create_dir_all(&temp_staging_dir).await;
 
