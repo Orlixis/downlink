@@ -633,6 +633,15 @@ impl DownloadManager {
                 }
             });
 
+            let custom_title = download_info.title.clone().or_else(|| {
+                let inferred = crate::ytdlp::infer_title_from_url(&source_url);
+                if inferred != "Video Stream" && !inferred.starts_with("Video from") {
+                    Some(inferred)
+                } else {
+                    None
+                }
+            });
+
             // ── Auto-retry with exponential backoff ───────────────────────────
             // Transient network/unknown failures get up to MAX_RETRIES attempts.
             // User-facing errors (login, geo, format) are never retried automatically.
@@ -661,6 +670,7 @@ impl DownloadManager {
                     id,
                     &target_url,
                     effective_referer,
+                    custom_title.as_deref(),
                     &preset_id,
                     &output_dir,
                     config.clone(),
@@ -897,6 +907,7 @@ async fn execute_download(
     id: Uuid,
     url: &str,
     referer: Option<&str>,
+    custom_title: Option<&str>,
     preset_id: &str,
     output_dir: &str,
     config: Arc<RwLock<DownloadConfig>>,
@@ -978,6 +989,19 @@ async fn execute_download(
 
     let config_guard = config.read().await;
 
+    // Output template selection
+    let output_template = if let Some(title) = custom_title {
+        let safe = sanitize_filename::sanitize(title);
+        let trimmed: String = safe.chars().take(120).collect();
+        if !trimmed.trim().is_empty() {
+            format!("{}/{}.%(ext)s", output_dir, trimmed)
+        } else {
+            format!("{}/{}", output_dir, config_guard.default_output_template)
+        }
+    } else {
+        format!("{}/{}", output_dir, config_guard.default_output_template)
+    };
+
     // Build yt-dlp command
     let mut args = vec![
         "--newline".to_string(),
@@ -987,7 +1011,11 @@ async fn execute_download(
         "--progress-template".to_string(),
         "download:[downlink] %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s %(progress._total_bytes_str)s".to_string(),
         "-o".to_string(),
-        format!("{}/{}", output_dir, config_guard.default_output_template),
+        output_template,
+        // Enforce safe filename length limits across APFS/NTFS/ext4 filesystems (prevents [Errno 63/36] File name too long)
+        "--trim-filenames".to_string(),
+        "160".to_string(),
+        "--windows-filenames".to_string(),
         // Turbo Multi-fragment concurrent streams (Folx/IDM tier parallel chunking)
         "--concurrent-fragments".to_string(),
         "16".to_string(),
