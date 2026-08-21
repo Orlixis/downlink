@@ -211,10 +211,11 @@ export function SettingsModal({
       />
 
       <div
-        ref={contentRef}
+        ref={modalRef}
         className="relative z-10 w-full max-w-2xl overflow-hidden rounded-2xl bg-zinc-900 ring-1 ring-white/10 shadow-2xl flex flex-col max-h-[85vh]"
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+        <div ref={contentRef} className="flex h-full flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
           <div className="flex items-center gap-2">
             <Settings className="h-5 w-5 text-blue-400" />
             <h2 className="text-sm font-semibold text-zinc-100">Preferences</h2>
@@ -334,6 +335,7 @@ export function SettingsModal({
             Save Changes
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

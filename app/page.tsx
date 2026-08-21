@@ -17,6 +17,7 @@ import { ResizableDivider } from "./components/ResizableDivider";
 import { UpdateModal } from "./components/UpdateModal";
 import { TrimModal } from "./components/TrimModal";
 import { BlackHoleOverlay } from "./components/BlackHoleOverlay";
+import { ClipboardBanner } from "./components/ClipboardBanner";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
 import type { UserSettings } from "./types";
@@ -244,25 +245,15 @@ export default function Home() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {(isDragging || clipboardUrl || orbitingUrls.length > 0) && (
+      {isDragging && (
         <BlackHoleOverlay
-          mode={isDragging ? "drag" : "clipboard"}
-          clipboardUrl={clipboardUrl}
+          mode="drag"
           orbitingUrls={orbitingUrls}
           onDropPackage={(x, y, urls) => {
             clearOrbitingUrls();
             urls.forEach((u) => setUrlInput((prev) => (prev ? `${prev.trim()}\n${u}` : u)));
           }}
-          onAbsorb={(url) => {
-            if (url) {
-              setUrlInput((prev) => (prev ? `${prev.trim()}\n${url}` : url));
-              dismissClipboardUrl(url);
-            }
-            inputRef.current?.focus();
-          }}
-          onDismiss={() => {
-            if (clipboardUrl) dismissClipboardUrl(clipboardUrl);
-          }}
+          onDismiss={() => {}}
         />
       )}
 
@@ -281,6 +272,22 @@ export default function Home() {
         updateState={downlink.updateAvailable}
         onUpdateClick={() => setIsUpdateModalOpen(true)}
       />
+
+      {clipboardUrl && !urlInput.trim() && (
+        <div className="px-4 pt-2">
+          <ClipboardBanner
+            url={clipboardUrl}
+            onAccept={() => {
+              setUrlInput(clipboardUrl);
+              dismissClipboardUrl(clipboardUrl);
+              inputRef.current?.focus();
+            }}
+            onDismiss={() => {
+              dismissClipboardUrl(clipboardUrl);
+            }}
+          />
+        </div>
+      )}
 
       <div className={`flex flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-hidden"}`}>
         <div className="flex-1 flex flex-col border-r border-zinc-800">

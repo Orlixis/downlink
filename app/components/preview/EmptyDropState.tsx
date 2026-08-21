@@ -37,7 +37,7 @@ export function EmptyDropState({ isDragging }: EmptyDropStateProps) {
           : "Paste a video link or drop stream files above to get started."}
       </p>
 
-      <div className="mt-6 flex items-center gap-1 text-[11px] font-mono text-zinc-400 bg-zinc-800/40 px-3 py-1 rounded-full ring-1 ring-white/5">
+      <div className="w-full mt-6 flex items-center gap-1 text-[11px] font-mono text-zinc-400 bg-zinc-800/40 px-3 py-1 rounded-xl ring-1 ring-white/5">
         <ArrowDown className="h-3 w-3 text-blue-400" />
         <span>Supports YouTube, TikTok, M3U8 & 1000+ sites</span>
       </div>

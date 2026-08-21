@@ -78,6 +78,33 @@ export function useDownlink(): UseDownlinkReturn {
   useEffect(() => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       setIsTauri(true);
+
+      import("@tauri-apps/api/app")
+        .then(({ getVersion }) => {
+          getVersion()
+            .then((v) => {
+              if (v) setAppVersion(v);
+            })
+            .catch(() => {
+              setAppVersion("0.1.42");
+            });
+        })
+        .catch(() => {
+          setAppVersion("0.1.42");
+        });
+
+      invoke<{
+        ytdlp?: { version?: string };
+        ffmpeg?: { version?: string };
+      }>("get_toolchain_status")
+        .then((status) => {
+          if (status?.ytdlp?.version) setYtDlpVersion(status.ytdlp.version);
+          if (status?.ffmpeg?.version) setFfmpegVersion(status.ffmpeg.version);
+          setIsReady(true);
+        })
+        .catch(() => {});
+    } else {
+      setAppVersion("0.1.42");
     }
   }, []);
 

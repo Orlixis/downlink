@@ -61,22 +61,31 @@ class SoundManager {
       const throwArray = await throwRes.arrayBuffer();
       const splashArray = await splashRes.arrayBuffer();
       
-      // decodeAudioData doesn't always support Promise API in older Safari, but standard in modern browsers.
-      this.context.decodeAudioData(swooshArray, (buffer) => {
-        this.swooshBuffer = buffer;
-      });
-      this.context.decodeAudioData(bounceOpenArray, (buffer) => {
-        this.bounceOpenBuffer = buffer;
-      });
-      this.context.decodeAudioData(bounceExitArray, (buffer) => {
-        this.bounceExitBuffer = buffer;
-      });
-      this.context.decodeAudioData(throwArray, (buffer) => {
-        this.throwBuffer = buffer;
-      });
-      this.context.decodeAudioData(splashArray, (buffer) => {
-        this.splashBuffer = buffer;
-      });
+      const decode = (buffer: ArrayBuffer) =>
+        new Promise<AudioBuffer | null>((resolve) => {
+          this.context!.decodeAudioData(
+            buffer,
+            (decoded) => resolve(decoded),
+            (err) => {
+              console.warn("Failed to decode audio:", err);
+              resolve(null);
+            }
+          );
+        });
+
+      const [swoosh, bounceOpen, bounceExit, throwBuf, splash] = await Promise.all([
+        decode(swooshArray),
+        decode(bounceOpenArray),
+        decode(bounceExitArray),
+        decode(throwArray),
+        decode(splashArray),
+      ]);
+
+      this.swooshBuffer = swoosh;
+      this.bounceOpenBuffer = bounceOpen;
+      this.bounceExitBuffer = bounceExit;
+      this.throwBuffer = throwBuf;
+      this.splashBuffer = splash;
     } catch (e) {
       console.error("Failed to load audio buffers:", e);
     }

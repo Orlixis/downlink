@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import type { FetchMetadataResult, UrlPreviewItem } from "@/app/types";
 import { AnimatedPreviewMorph } from "./AnimatedPreviewMorph";
 import { PreviewItemSkeleton } from "./PreviewItemSkeleton";
@@ -38,7 +39,14 @@ export function PreviewPanel({
   onSelectQuality,
   onSelectQualityForAll,
 }: PreviewPanelProps) {
-  const hasPreviews = allPreviews.length > 0 || rangeGroups.length > 0;
+  const lastPreviewsRef = useRef(allPreviews);
+  if (allPreviews.length > 0) {
+    lastPreviewsRef.current = allPreviews;
+  }
+  const displayPreviews =
+    isExiting && allPreviews.length === 0 ? lastPreviewsRef.current : allPreviews;
+
+  const hasPreviews = displayPreviews.length > 0 || rangeGroups.length > 0;
 
   if (!hasPreviews) {
     return <EmptyDropState isDragging={isDragging} />;
@@ -54,7 +62,7 @@ export function PreviewPanel({
         />
       ))}
 
-      {allPreviews.map((item, idx) => (
+      {displayPreviews.map((item, idx) => (
         <AnimatedPreviewMorph
           key={item.url}
           index={idx}

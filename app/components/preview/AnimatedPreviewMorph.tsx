@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
@@ -21,144 +21,42 @@ export function AnimatedPreviewMorph({
 }: AnimatedPreviewMorphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const hasLanded = useRef(false);
+  const prevLoadingRef = useRef(loading);
 
   useGSAP(
     () => {
       if (!containerRef.current || !contentRef.current) return;
-      const delay = index * 0.15;
+      const delay = index * 0.08;
 
-      gsap.set(containerRef.current, {
-        y: -180,
-        width: 450,
-        height: 48,
-        borderRadius: "12px",
-        backgroundColor: "rgb(39 39 42)",
-        border: "1px solid rgb(63 63 70)",
-        overflow: "hidden",
-      });
-      gsap.set(contentRef.current, { opacity: 0 });
-
-      const tl = gsap.timeline({
-        onComplete: () => {
-          hasLanded.current = true;
-          expandToCurrent();
-        },
-      });
-
-      const floorY = 60;
-
-      tl.to(
+      gsap.fromTo(
         containerRef.current,
         {
-          width: 24,
-          height: 24,
-          borderRadius: "12px",
-          backgroundColor: "rgb(59 130 246)",
-          border: "none",
-          duration: 0.35,
-          ease: "power2.in",
+          y: -24,
+          opacity: 0,
+          scale: 0.96,
         },
-        delay
-      )
-        .to(
-          containerRef.current,
-          {
-            y: floorY,
-            duration: 0.35,
-            ease: "power2.in",
-          },
-          delay
-        )
-        .to(
-          containerRef.current,
-          {
-            y: 0,
-            duration: 0.3,
-            ease: "back.out(1.5)",
-          },
-          ">"
-        );
+        {
+          y: 0,
+          opacity: 1,
+          scale: 1,
+          duration: 0.4,
+          delay,
+          ease: "power2.out",
+        }
+      );
     },
     { scope: containerRef }
   );
 
-  const expandToCurrent = () => {
-    if (!containerRef.current || !contentRef.current || isExiting) return;
+  useEffect(() => {
+    if (!containerRef.current || !contentRef.current) return;
 
-    contentRef.current.style.opacity = "0";
-    contentRef.current.style.display = "";
-
-    containerRef.current.style.width = "auto";
-    containerRef.current.style.height = "auto";
-    const targetH = contentRef.current.offsetHeight || 64;
-    const targetW = contentRef.current.offsetWidth || 384;
-
-    containerRef.current.style.width = "24px";
-    containerRef.current.style.height = "24px";
-
-    const tl = gsap.timeline();
-    tl.to(containerRef.current, {
-      width: targetW,
-      height: targetH,
-      borderRadius: "16px",
-      backgroundColor: "transparent",
-      duration: 0.5,
-      ease: "power3.inOut",
-    }).to(
-      contentRef.current,
-      {
-        opacity: 1,
-        duration: 0.3,
-        onComplete: () => {
-          if (containerRef.current) {
-            containerRef.current.style.width = targetW + "px";
-            containerRef.current.style.height = targetH + "px";
-          }
-        },
-      },
-      "-=0.2"
-    );
-  };
-
-  useGSAP(() => {
-    if (hasLanded.current && !loading && !isExiting) {
-      if (!containerRef.current || !contentRef.current) return;
-
-      const oldW = containerRef.current.style.width;
-      const oldH = containerRef.current.style.height;
-
-      containerRef.current.style.width = "auto";
-      containerRef.current.style.height = "auto";
-
-      const newH = contentRef.current.offsetHeight;
-      const newW = contentRef.current.offsetWidth;
-
-      containerRef.current.style.width = oldW;
-      containerRef.current.style.height = oldH;
-
-      contentRef.current.style.opacity = "0";
-
-      const tl = gsap.timeline();
-      tl.to(containerRef.current, {
-        width: newW,
-        height: newH,
-        duration: 0.5,
-        ease: "power3.inOut",
-        onComplete: () => {
-          if (containerRef.current) {
-            gsap.set(containerRef.current, { clearProps: "all" });
-          }
-        },
-      });
-
-      tl.to(
+    if (prevLoadingRef.current !== loading) {
+      prevLoadingRef.current = loading;
+      gsap.fromTo(
         contentRef.current,
-        {
-          opacity: 1,
-          duration: 0.3,
-        },
-        "-=0.2"
+        { opacity: 0, y: 6 },
+        { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }
       );
     }
   }, [loading]);
@@ -170,36 +68,32 @@ export function AnimatedPreviewMorph({
       gsap.killTweensOf(containerRef.current);
       gsap.killTweensOf(contentRef.current);
 
-      const currentW = containerRef.current.offsetWidth;
-      const currentH = containerRef.current.offsetHeight;
-      containerRef.current.style.width = currentW + "px";
-      containerRef.current.style.height = currentH + "px";
-
       const tl = gsap.timeline();
-      tl.to(contentRef.current, { opacity: 0, duration: 0.15 });
-      tl.to(containerRef.current, {
-        width: 24,
-        height: 24,
-        borderRadius: "12px",
-        backgroundColor: "rgb(59 130 246)",
-        border: "none",
-        duration: 0.25,
-        ease: "power2.in",
-      });
-      tl.to(containerRef.current, {
-        y: 120,
+      tl.to(contentRef.current, {
         opacity: 0,
-        scale: 0.5,
-        duration: 0.3,
+        scale: 0.9,
+        duration: 0.2,
         ease: "power2.in",
       });
+      tl.to(
+        containerRef.current,
+        {
+          y: 80,
+          scale: 0.2,
+          opacity: 0,
+          borderRadius: "50%",
+          duration: 0.35,
+          ease: "back.in(1.7)",
+        },
+        "-=0.1"
+      );
     }
   }, [isExiting]);
 
   return (
     <div
       ref={containerRef}
-      className={`relative mx-auto flex flex-col items-center justify-center ${
+      className={`relative mx-auto flex w-full max-w-xl flex-col items-center justify-center transition-all duration-300 ${
         className || ""
       }`}
     >
