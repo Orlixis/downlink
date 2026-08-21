@@ -167,6 +167,33 @@ pub fn ensure_app_dirs() -> Result<AppDirs> {
     })
 }
 
+/// Scans the application tmp/ directory and cleans up stale temporary directories or leftover fragment files
+/// older than 6 hours (e.g. from crashed or force-quit sessions).
+pub async fn cleanup_stale_temp_files() {
+    if let Ok(data_dir) = app_data_dir() {
+        let tmp_dir = data_dir.join("tmp");
+        if let Ok(mut entries) = tokio::fs::read_dir(&tmp_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                if let Ok(meta) = entry.metadata().await {
+                    if let Ok(modified) = meta.modified() {
+                        if let Ok(elapsed) = modified.elapsed() {
+                            if elapsed > std::time::Duration::from_secs(6 * 3600) {
+                                if meta.is_dir() {
+                                    let _ = tokio::fs::remove_dir_all(&path).await;
+                                } else {
+                                    let _ = tokio::fs::remove_file(&path).await;
+                                }
+                                log::info!("Cleaned up stale temp remnant: {:?}", path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AppDirs {
     pub data: PathBuf,

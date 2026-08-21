@@ -118,7 +118,7 @@ async fn get_or_init_download_manager(
         log::warn!("Event forwarding task ended");
     });
 
-    // ── Startup recovery: reset orphaned downloads ────────────────────────────
+    // ── Startup recovery: reset orphaned downloads & clean stale temp files ──
     // Any download left in downloading/fetching/postprocessing state when the app
     // last closed (crash or force-quit) will never resume on its own.
     // Reset them to Stopped so the user sees a clear resumable state.
@@ -126,6 +126,7 @@ async fn get_or_init_download_manager(
         let mut db = state.db.lock().await;
         let _ = db.reset_orphaned_downloads();
     }
+    crate::db::cleanup_stale_temp_files().await;
 
     // Create download manager
     let settings = {

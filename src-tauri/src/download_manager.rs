@@ -772,6 +772,13 @@ impl DownloadManager {
                     let final_path_str = final_path.unwrap_or_default();
                     let _ = db_guard.set_status(id, DownloadStatus::Done, Some("Completed"));
                     let _ = db_guard.set_final_path(id, &final_path_str);
+                    
+                    // Clean up any remaining temporary fragment files for this task
+                    if let Ok(data_dir) = crate::db::app_data_dir() {
+                        let task_temp = data_dir.join("tmp").join(id.to_string());
+                        let _ = tokio::fs::remove_dir_all(&task_temp).await;
+                    }
+
                     let _ = event_tx
                         .send(DownlinkEvent::DownloadCompleted {
                             id,
@@ -780,7 +787,11 @@ impl DownloadManager {
                         .await;
                 }
                 Err(DownloadError::Canceled) => {
-                    // Status already set by cancel() - just emit event
+                    // Status already set by cancel() - just clean up temp and emit event
+                    if let Ok(data_dir) = crate::db::app_data_dir() {
+                        let task_temp = data_dir.join("tmp").join(id.to_string());
+                        let _ = tokio::fs::remove_dir_all(&task_temp).await;
+                    }
                     let _ = event_tx.send(DownlinkEvent::DownloadCanceled { id }).await;
                 }
                 Err(DownloadError::Stopped) => {
@@ -836,6 +847,12 @@ impl DownloadManager {
         {
             let mut db = self.db.lock().await;
             let _ = db.set_status(id, DownloadStatus::Canceled, Some("Canceled by user"));
+        }
+
+        // Clean up temporary fragment staging directory
+        if let Ok(data_dir) = crate::db::app_data_dir() {
+            let task_temp = data_dir.join("tmp").join(id.to_string());
+            let _ = tokio::fs::remove_dir_all(&task_temp).await;
         }
 
         // Now send the cancel signal to the running process
