@@ -121,13 +121,12 @@ export function createDownlinkActions(
 
   const expandPlaylist = async (
     url: string,
-    opts?: { preset_id?: string; output_dir?: string; parent_id?: string | null }
+    opts?: { preset_id?: string; output_dir?: string }
   ): Promise<ExpandPlaylistResult> => {
     try {
       const options: ExpandPlaylistOptions = {
         preset_id: opts?.preset_id || "best",
         output_dir: opts?.output_dir || "",
-        parent_id: opts?.parent_id ?? null,
       };
 
       return await invoke<ExpandPlaylistResult>("expand_playlist", {
