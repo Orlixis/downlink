@@ -612,15 +612,71 @@ fn looks_like_json_object(s: &str) -> bool {
     t.starts_with('{') && t.ends_with('}')
 }
 
+/// Helper to determine if a string is a token, base64 blob, random hex hash, or generic stream file.
+pub fn is_token_or_hash(s: &str) -> bool {
+    let clean = s.trim();
+    if clean.is_empty() {
+        return true;
+    }
+    let lower = clean.to_lowercase();
+    if matches!(
+        lower.as_str(),
+        "master"
+            | "index"
+            | "playlist"
+            | "manifest"
+            | "video"
+            | "stream"
+            | "undefined"
+            | "null"
+            | "hls"
+            | "dash"
+            | "video stream"
+            | "media"
+            | "v"
+            | "play"
+            | "watch"
+    ) {
+        return true;
+    }
+    // Starts with base64 'http' / 'https'
+    if clean.starts_with("aHR0") || clean.starts_with("AHR0") {
+        return true;
+    }
+    // Hex hash (e.g. 33ab7e8459a2f03b...)
+    if clean.len() >= 20 && clean.chars().all(|c| c.is_ascii_hexdigit()) {
+        return true;
+    }
+    // Base64-like alphanumeric token with length > 24 and no spaces
+    if clean.len() >= 24 && !clean.contains(' ') && !clean.contains('-') {
+        return true;
+    }
+    false
+}
+
 /// Infers a human-readable title from a webpage or video URL path.
 /// E.g. `https://aether.bar/media/tmdb-movie-539972-kraven-the-hunter` -> `"Kraven The Hunter"`
 pub fn infer_title_from_url(url_str: &str) -> String {
     if let Ok(parsed) = url::Url::parse(url_str) {
         if let Some(path_segments) = parsed.path_segments() {
             let segs: Vec<&str> = path_segments.filter(|s| !s.trim().is_empty()).collect();
-            if let Some(&last_seg) = segs.last() {
-                // Remove extensions like .html, .m3u8, .mp4
-                let without_ext = last_seg.split('.').next().unwrap_or(last_seg);
+            for &seg in segs.iter().rev() {
+                let without_ext = seg.split('.').next().unwrap_or(seg);
+                if is_token_or_hash(without_ext) {
+                    if without_ext.starts_with("aHR0") || without_ext.starts_with("AHR0") {
+                        use base64::Engine;
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(without_ext) {
+                            if let Ok(decoded_url) = String::from_utf8(bytes) {
+                                let inferred = infer_title_from_url(&decoded_url);
+                                if inferred != "Video Stream" && !inferred.starts_with("Video from") {
+                                    return inferred;
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+
                 let cleaned = without_ext
                     .replace("tmdb-movie-", "")
                     .replace("tmdb-tv-", "")
@@ -639,7 +695,7 @@ pub fn infer_title_from_url(url_str: &str) -> String {
                     })
                     .collect();
                 let title = words.join(" ");
-                if !title.trim().is_empty() {
+                if !title.trim().is_empty() && !is_token_or_hash(&title) {
                     return title;
                 }
             }
