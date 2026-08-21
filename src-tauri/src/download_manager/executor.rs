@@ -234,6 +234,11 @@ pub async fn execute_download(
     let merge_dest_re = Regex::new(r#"Merging formats into "([^"]+)""#).ok();
     let move_dest_re = Regex::new(r#"Moving file(?:.*?) to "([^"]+)""#).ok();
     let finished_re = Regex::new(r#"\[download\] 100%"#).ok();
+    let format_re = Regex::new(r"Downloading \d+ format\(s\):\s+(.+)").ok();
+
+    let mut total_streams = 1;
+    let mut current_stream = 0;
+    let mut is_merging = false;
 
     loop {
         tokio::select! {
@@ -304,8 +309,54 @@ pub async fn execute_download(
                             }
                         }
 
+                        if let Some(ref re) = format_re {
+                            if let Some(caps) = re.captures(&l) {
+                                let formats = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                                if formats.contains('+') {
+                                    total_streams = 2;
+                                } else {
+                                    total_streams = 1;
+                                }
+                                log::info!("Detected formats: {}, total_streams = {}", formats, total_streams);
+                            }
+                        }
+
+                        if let Some(ref re) = dest_re {
+                            if re.is_match(&l) {
+                                current_stream += 1;
+                                log::info!("Detected destination, starting stream {}/{}", current_stream, total_streams);
+                            }
+                        }
+
+                        if let Some(ref re) = already_re {
+                            if re.is_match(&l) {
+                                current_stream += 1;
+                                log::info!("Detected already downloaded, bumping stream to {}/{}", current_stream, total_streams);
+                            }
+                        }
+
                         if let Some(p) = parsed {
-                            if let Some(pct) = p.percent {
+                            if let Some(mut pct) = p.percent {
+                                let mut phase_name;
+                                
+                                if total_streams == 2 {
+                                    if current_stream <= 1 {
+                                        pct = pct * 0.90; 
+                                        phase_name = "Downloading video (1/2)".to_string();
+                                    } else {
+                                        pct = 90.0 + (pct * 0.08); 
+                                        phase_name = "Downloading audio (2/2)".to_string();
+                                    }
+                                } else {
+                                    pct = pct * 0.98;
+                                    phase_name = "Downloading".to_string();
+                                }
+                                
+                                if is_merging {
+                                    pct = 98.0;
+                                    phase_name = "Merging streams...".to_string();
+                                }
+
                                 if (pct - reported_percent).abs() >= 0.2 || pct >= 99.9 {
                                     reported_percent = pct;
                                     log::info!("Progress: {:.1}%", pct);
@@ -319,7 +370,7 @@ pub async fn execute_download(
                                             speed_bps: p.speed_bps,
                                             eta_seconds: p.eta_seconds,
                                             phase: Some(Phase {
-                                                name: p.phase.clone().unwrap_or_else(|| "Downloading".to_string()),
+                                                name: phase_name,
                                                 detail: None,
                                             }),
                                         },
@@ -330,10 +381,11 @@ pub async fn execute_download(
 
                         if let Some(ref re) = merge_re {
                             if re.is_match(&l) {
+                                is_merging = true;
                                 log::info!("Post-processing: merging streams");
                                 let _ = event_tx.send(DownlinkEvent::DownloadPostProcessing {
                                     id,
-                                    step: "Merging streams".to_string(),
+                                    step: "Merging streams...".to_string(),
                                     detail: None,
                                 }).await;
                             }
@@ -341,22 +393,26 @@ pub async fn execute_download(
 
                         if let Some(ref re) = finished_re {
                             if re.is_match(&l) {
-                                log::info!("Download complete, post-processing...");
-                                let _ = event_tx.send(DownlinkEvent::DownloadProgress {
-                                    id,
-                                    status: DownloadStatus::Downloading,
-                                    progress: Progress {
-                                        percent: Some(100.0),
-                                        bytes_downloaded: None,
-                                        bytes_total: None,
-                                        speed_bps: None,
-                                        eta_seconds: None,
-                                        phase: Some(Phase {
-                                            name: "Finishing...".to_string(),
-                                            detail: None,
-                                        }),
-                                    },
-                                }).await;
+                                if total_streams == 2 && current_stream == 1 {
+                                    // Finished video, about to start audio. Don't send 100%.
+                                } else {
+                                    log::info!("Download complete, post-processing...");
+                                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                                        id,
+                                        status: DownloadStatus::Downloading,
+                                        progress: Progress {
+                                            percent: Some(100.0),
+                                            bytes_downloaded: None,
+                                            bytes_total: None,
+                                            speed_bps: None,
+                                            eta_seconds: None,
+                                            phase: Some(Phase {
+                                                name: "Finishing...".to_string(),
+                                                detail: None,
+                                            }),
+                                        },
+                                    }).await;
+                                }
                             }
                         }
 

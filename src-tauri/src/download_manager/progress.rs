@@ -28,7 +28,7 @@ pub fn parse_speed(s: &str) -> Option<u64> {
         _ => return None,
     };
 
-    Some((num * multiplier * 8.0) as u64)
+    Some((num * multiplier) as u64)
 }
 
 pub fn parse_eta(s: &str) -> Option<u64> {
@@ -128,8 +128,8 @@ mod tests {
 
     #[test]
     fn test_parse_speed() {
-        assert_eq!(parse_speed("1.00MiB/s"), Some(8 * 1024 * 1024));
-        assert_eq!(parse_speed("500KiB/s"), Some(500 * 1024 * 8));
+        assert_eq!(parse_speed("1.00MiB/s"), Some(1024 * 1024));
+        assert_eq!(parse_speed("500KiB/s"), Some(500 * 1024));
         assert_eq!(parse_speed("N/A"), None);
     }
 
