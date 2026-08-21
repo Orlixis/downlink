@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.50](https://github.com/Orlixis/downlink/compare/v0.1.49...v0.1.50) (2026-08-21)
+
+
+### Features
+
+* implement background janitor service to clean up orphaned yt-dlp temporary files and staging directories ([f7154f4](https://github.com/Orlixis/downlink/commit/f7154f47cb0a917952cd415fb657e91e5ba9a993))
+
 ### [0.1.49](https://github.com/Orlixis/downlink/compare/v0.1.48...v0.1.49) (2026-08-21)
 
 ### [0.1.48](https://github.com/Orlixis/downlink/compare/v0.1.47...v0.1.48) (2026-08-21)
