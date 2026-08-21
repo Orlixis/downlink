@@ -1,6 +1,7 @@
 pub mod classifier;
 pub mod executor;
 pub mod fixup;
+pub mod janitor;
 pub mod progress;
 pub mod types;
 pub mod worker;

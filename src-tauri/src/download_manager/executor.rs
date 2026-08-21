@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use regex::Regex;
@@ -97,21 +97,21 @@ pub async fn execute_download(
 
     let config_guard = config.read().await;
 
-    let output_template = if let Some(title) = custom_title {
+    let output_filename = if let Some(title) = custom_title {
         let safe = sanitize_filename::sanitize(title);
         let trimmed: String = safe.chars().take(120).collect();
         if !trimmed.trim().is_empty() {
-            format!("{}/{}.%(ext)s", output_dir, trimmed)
+            format!("{}.%(ext)s", trimmed)
         } else {
-            format!("{}/{}", output_dir, config_guard.default_output_template)
+            config_guard.default_output_template.clone()
         }
     } else {
-        format!("{}/{}", output_dir, config_guard.default_output_template)
+        config_guard.default_output_template.clone()
     };
 
     let temp_staging_dir = crate::db::app_data_dir()
         .map(|d| d.join("tmp").join(id.to_string()))
-        .unwrap_or_else(|_| PathBuf::from(output_dir));
+        .unwrap_or_else(|_| PathBuf::from(output_dir).join(".downlink_tmp").join(id.to_string()));
     let _ = tokio::fs::create_dir_all(&temp_staging_dir).await;
 
     let mut args = vec![
@@ -122,9 +122,11 @@ pub async fn execute_download(
         "--progress-template".to_string(),
         "download:[downlink] %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s %(progress._total_bytes_str)s".to_string(),
         "--paths".to_string(),
+        format!("home:{}", output_dir),
+        "--paths".to_string(),
         format!("temp:{}", temp_staging_dir.display()),
         "-o".to_string(),
-        output_template,
+        output_filename,
         "--trim-filenames".to_string(),
         "160".to_string(),
         "--windows-filenames".to_string(),
@@ -238,6 +240,7 @@ pub async fn execute_download(
     let already_re = Regex::new(r#"\[download\] (.+) has already been downloaded"#).ok();
     let merge_dest_re = Regex::new(r#"Merging formats into "([^"]+)""#).ok();
     let move_dest_re = Regex::new(r#"Moving file(?:.*?) to "([^"]+)""#).ok();
+    let fixup_dest_re = Regex::new(r#"Fixing MPEG-TS in MP4 container of "([^"]+)""#).ok();
     let finished_re = Regex::new(r#"\[download\] 100%"#).ok();
     let format_re = Regex::new(r"Downloading \d+ format\(s\):\s+(.+)").ok();
 
@@ -436,6 +439,11 @@ pub async fn execute_download(
                                 final_path = caps.get(1).map(|m| m.as_str().to_string());
                             }
                         }
+                        if let Some(ref re) = fixup_dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
                         if let Some(ref re) = already_re {
                             if let Some(caps) = re.captures(&l) {
                                 final_path = caps.get(1).map(|m| m.as_str().to_string());
@@ -514,6 +522,9 @@ pub async fn execute_download(
             }
         }
 
+        let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+        let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
         return Err(DownloadError::Failed {
             code,
             message,
@@ -521,5 +532,33 @@ pub async fn execute_download(
         });
     }
 
-    Ok(final_path)
+    let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+    let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+    let resolved_final_path = if let Some(p) = final_path {
+        let pb = Path::new(&p);
+        if pb.is_absolute() {
+            Some(p)
+        } else {
+            Some(Path::new(output_dir).join(pb).to_string_lossy().to_string())
+        }
+    } else {
+        if let Some(title) = custom_title {
+            let safe = sanitize_filename::sanitize(title);
+            let trimmed: String = safe.chars().take(120).collect();
+            let candidate_mp4 = Path::new(output_dir).join(format!("{}.mp4", trimmed));
+            let candidate_mkv = Path::new(output_dir).join(format!("{}.mkv", trimmed));
+            if candidate_mp4.exists() {
+                Some(candidate_mp4.to_string_lossy().to_string())
+            } else if candidate_mkv.exists() {
+                Some(candidate_mkv.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    Ok(resolved_final_path)
 }

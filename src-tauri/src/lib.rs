@@ -331,7 +331,18 @@ pub fn run() {
 
             emit_app_ready(&app.handle(), None, None);
 
+            download_manager::janitor::start_janitor_service(app.handle().clone());
+
             Ok(())
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
+                if let Some(dl) = dirs::download_dir() {
+                    let _ = tauri::async_runtime::block_on(async {
+                        download_manager::janitor::run_full_cleanup(vec![dl]).await;
+                    });
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // URL and queue management
