@@ -1,15 +1,11 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AddUrlsOptions,
   AddUrlsResult,
   AppUpdateInfo,
-  DownlinkEvent,
   ExpandPlaylistOptions,
   ExpandPlaylistResult,
   FetchMetadataOptions,
@@ -20,9 +16,11 @@ import type {
   ToolchainStatus,
   UserSettings,
   WindowState,
+  WhisperModel,
 } from "../types";
+import { createDownlinkActions } from "./useDownlinkActions";
+import { useDownlinkEvents } from "./useDownlinkEvents";
 
-// Update check state
 export interface UpdateAvailableState {
   available: boolean;
   latestVersion: string | null;
@@ -37,84 +35,25 @@ export interface UpdateAvailableState {
   error: string | null;
 }
 
-// Event name used by the backend
-const DOWNLINK_EVENT_NAME = "downlink://event";
+export type DownlinkActions = ReturnType<typeof createDownlinkActions>;
 
-// Hook return type
-export interface UseDownlinkReturn {
-  // State
+export interface UseDownlinkReturn extends DownlinkActions {
   isTauri: boolean;
   isReady: boolean;
   appVersion: string | null;
   ytDlpVersion: string | null;
   ffmpegVersion: string | null;
-
-  // Update state
   updateAvailable: UpdateAvailableState;
   dismissUpdateNotification: () => void;
-
-  // Queue state
   queue: QueueItem[];
   history: QueueItem[];
   refreshQueue: () => Promise<void>;
   refreshHistory: () => Promise<void>;
-
-  // URL operations
-  addUrls: (urlsText: string, options: AddUrlsOptions) => Promise<AddUrlsResult>;
-  fetchMetadata: (url: string, options: FetchMetadataOptions) => Promise<FetchMetadataResult>;
-  /** Fast phase-1 preview (~2-3s): title/thumbnail/uploader only, no quality enumeration */
-  fastFetchMetadata: (url: string) => Promise<FetchMetadataResult | null>;
-  previewPlaylist: (playlistUrl: string) => Promise<PreviewPlaylistResult>;
-  expandPlaylist: (playlistUrl: string, options: ExpandPlaylistOptions) => Promise<ExpandPlaylistResult>;
-  extractUrls: (text: string) => Promise<string[]>;
-
-  // Download control
-  startDownload: (id: string) => Promise<void>;
-  stopDownload: (id: string) => Promise<void>;
-  cancelDownload: (id: string) => Promise<void>;
-  retryDownload: (id: string) => Promise<void>;
-  startAllDownloads: () => Promise<void>;
-  stopAllDownloads: () => Promise<void>;
-  removeDownload: (id: string) => Promise<void>;
-  clearQueue: () => Promise<void>;
-  clearHistory: () => Promise<void>;
-
-  // Settings
-  getSettings: () => Promise<UserSettings>;
-  saveSettings: (settings: UserSettings) => Promise<void>;
-  getWindowState: () => Promise<WindowState>;
-  saveWindowState: (state: WindowState) => Promise<void>;
-
-  // Tools
-  getToolchainStatus: () => Promise<ToolchainStatus>;
-  checkForUpdates: () => Promise<string[]>;
-  updateTool: (toolName: string) => Promise<string>;
-
-  // App updates
-  checkAppUpdate: () => Promise<AppUpdateInfo>;
-  installAppUpdate: () => Promise<void>;
-  restartApp: () => Promise<void>;
-
-  // Presets
-  getPresets: () => Promise<PresetInfo[]>;
-
-  // Utilities
-  getAppDataDir: () => Promise<string>;
-  getDefaultDownloadDir: () => Promise<string>;
-  openFile: (path: string) => Promise<void>;
-  openFolder: (path: string) => Promise<void>;
-
-  // AI Transcription
-  checkWhisper: () => Promise<string>;
-  transcribeFile: (filePath: string, model?: "tiny" | "base" | "small" | "medium") => Promise<{ srt_path: string; method: string }>;
-
-  // Error state
   lastError: string | null;
   clearError: () => void;
 }
 
 export function useDownlink(): UseDownlinkReturn {
-  // State
   const [isTauri, setIsTauri] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -134,707 +73,98 @@ export function useDownlink(): UseDownlinkReturn {
     error: null,
   });
 
-  // Refs for cleanup
-  const unlistenRef = useRef<UnlistenFn | null>(null);
-
-  // Trigger notifications for newly completed downloads
   const notifiedIdsRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    queue.forEach(item => {
-      if (item.status === "done" && !notifiedIdsRef.current.has(item.id)) {
-        notifiedIdsRef.current.add(item.id);
-        
-        // Check if we are running in tauri
-        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-          import('@tauri-apps/plugin-notification').then(async ({ isPermissionGranted, requestPermission, sendNotification }) => {
-            let granted = await isPermissionGranted();
-            if (!granted) {
-              const permission = await requestPermission();
-              granted = permission === 'granted';
-            }
-            if (granted) {
-              sendNotification({
-                title: "Download Complete",
-                body: `${item.title || 'Video'} has finished downloading.`,
-              });
-            }
-          }).catch(err => {
-            console.error("[Downlink] Failed to send notification:", err);
-          });
-        }
-      }
-    });
-  }, [queue]);
-
-  // Check if we're running in Tauri
   useEffect(() => {
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
       setIsTauri(true);
     }
   }, []);
 
-  // Normalize status from backend (handles SCREAMING_SNAKE_CASE to lowercase)
-  const normalizeStatus = (status: string): QueueItem["status"] => {
-    return status.toLowerCase() as QueueItem["status"];
-  };
-
-  // Handle backend events
-  const handleEvent = useCallback((event: DownlinkEvent) => {
-    console.log("[Downlink] Event received:", event.event, event.data);
-    switch (event.event) {
-      case "AppReady": {
-        const data = event.data as {
-          versions: {
-            app_version: string;
-            yt_dlp_version: string | null;
-            ffmpeg_version: string | null;
-          };
-        };
-        setAppVersion(data.versions.app_version);
-        setYtDlpVersion(data.versions.yt_dlp_version);
-        setFfmpegVersion(data.versions.ffmpeg_version);
-        setIsReady(true);
-        break;
-      }
-
-      case "DownloadProgress": {
-        const data = event.data as {
-          id: string;
-          status: string;
-          progress: {
-            percent: number | null;
-            speed_bps: number | null;
-            eta_seconds: number | null;
-            phase: { name: string } | null;
-          };
-        };
-        console.log("[Downlink] Progress update for", data.id, "percent:", data.progress.percent);
-        setQueue((prev) => {
-          const updated = prev.map((item) =>
-            item.id === data.id
-              ? {
-                ...item,
-                status: normalizeStatus(data.status),
-                progress_percent: data.progress.percent,
-                speed_bps: data.progress.speed_bps,
-                eta_seconds: data.progress.eta_seconds,
-                phase: data.progress.phase?.name ?? null,
-              }
-              : item
-          );
-          console.log("[Downlink] Queue after update:", updated.find(i => i.id === data.id));
-          return updated;
-        });
-        break;
-      }
-
-      case "DownloadCompleted": {
-        const data = event.data as { id: string; final_path: string };
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? {
-                ...item,
-                status: "done" as const,
-                progress_percent: 100,
-                final_path: data.final_path,
-                phase: "Completed",
-              }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "DownloadFailed": {
-        const data = event.data as {
-          id: string;
-          error_code: string;
-          user_message: string;
-        };
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? {
-                ...item,
-                status: "failed" as const,
-                phase: "Failed",
-                error_message: data.user_message,
-              }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "DownloadStopped": {
-        const data = event.data as { id: string };
-        // Preserve progress when stopped - only update status and phase
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? {
-                ...item,
-                status: "stopped" as const,
-                phase: "Stopped",
-                // Clear speed and ETA since we're not downloading anymore
-                speed_bps: null,
-                eta_seconds: null,
-                // Keep progress_percent, bytes_downloaded, bytes_total as-is
-              }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "DownloadCanceled": {
-        const data = event.data as { id: string };
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? { ...item, status: "canceled" as const, phase: "Canceled" }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "DownloadStarted": {
-        const data = event.data as { id: string };
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? { ...item, status: "downloading" as const, phase: "Starting…" }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "MetadataReady": {
-        const data = event.data as {
-          id: string;
-          info: {
-            title: string | null;
-            uploader: string | null;
-            duration_seconds: number | null;
-            thumbnail_url: string | null;
-            webpage_url: string | null;
-          };
-        };
-        console.log("[Downlink] MetadataReady for", data.id, "title:", data.info.title);
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? {
-                ...item,
-                title: data.info.title ?? item.title,
-                uploader: data.info.uploader ?? item.uploader,
-                thumbnail_url: data.info.thumbnail_url ?? item.thumbnail_url,
-                duration_seconds: data.info.duration_seconds ?? item.duration_seconds,
-              }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "DownloadPostProcessing": {
-        const data = event.data as { id: string; step: string };
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? {
-                ...item,
-                status: "postprocessing" as const,
-                phase: data.step,
-              }
-              : item
-          )
-        );
-        break;
-      }
-
-      case "FetchProgress": {
-        const data = event.data as { url: string; hint: string };
-        // Dispatch a custom DOM event so page.tsx can update the preview skeleton hint
-        // without needing to thread a callback through the hook's return type.
-        window.dispatchEvent(new CustomEvent("downlink:fetchProgress", { detail: data }));
-        break;
-      }
-    }
-  }, []);
-
-  // Set up event listener
-  useEffect(() => {
-    if (!isTauri) return;
-
-    const setupListener = async () => {
-      try {
-        console.log("[Downlink] Setting up event listener for:", DOWNLINK_EVENT_NAME);
-        unlistenRef.current = await listen<DownlinkEvent>(
-          DOWNLINK_EVENT_NAME,
-          (event) => {
-            console.log("[Downlink] Raw event received:", event);
-            handleEvent(event.payload);
-          }
-        );
-        console.log("[Downlink] Event listener set up successfully");
-      } catch (e) {
-        console.error("Failed to set up event listener:", e);
-      }
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlistenRef.current) {
-        unlistenRef.current();
-      }
-    };
-  }, [isTauri, handleEvent]);
-
-  // ── Window title: show aggregate download speed while active ──
-  useEffect(() => {
-    if (!isTauri) return;
-
-    const activeItems = queue.filter(
-      (q) => q.status === "downloading" || q.status === "postprocessing"
-    );
-    const totalBps = activeItems.reduce((s, q) => s + (q.speed_bps ?? 0), 0);
-
-    const formatSpeed = (bps: number) => {
-      if (bps >= 1024 * 1024) return `${(bps / 1024 / 1024).toFixed(1)} MB/s`;
-      if (bps >= 1024) return `${(bps / 1024).toFixed(0)} KB/s`;
-      return `${bps.toFixed(0)} B/s`;
-    };
-
-    const title =
-      activeItems.length > 0 && totalBps > 0
-        ? `↓ ${formatSpeed(totalBps)} — Downlink`
-        : "Downlink";
-
-    invoke("set_window_title", { title }).catch(() => {
-      // Graceful degradation — command may not be registered in all builds
-      document.title = title;
-    });
-  }, [isTauri, queue]);
-
-  // Queue operations
   const refreshQueue = useCallback(async () => {
-    if (!isTauri) return;
     try {
       const items = await invoke<QueueItem[]>("get_queue");
       setQueue(items);
     } catch (e) {
-      setLastError(`Failed to refresh queue: ${e}`);
+      console.error("[Downlink] Failed to refresh queue:", e);
     }
-  }, [isTauri]);
+  }, []);
 
   const refreshHistory = useCallback(async () => {
-    if (!isTauri) return;
     try {
-      const items = await invoke<QueueItem[]>("get_history", { limit: 100 });
+      const items = await invoke<QueueItem[]>("get_history");
       setHistory(items);
     } catch (e) {
-      setLastError(`Failed to refresh history: ${e}`);
+      console.error("[Downlink] Failed to refresh history:", e);
     }
-  }, [isTauri]);
+  }, []);
 
-  // Initial data load - must be after refreshQueue/refreshHistory are defined
+  useDownlinkEvents({
+    isTauri,
+    setAppVersion,
+    setYtDlpVersion,
+    setFfmpegVersion,
+    setIsReady,
+    setQueue,
+    refreshQueue,
+    refreshHistory,
+  });
+
   useEffect(() => {
-    if (!isTauri) return;
-
-    const loadInitialData = async () => {
-      try {
-        // Fetch app version first (since AppReady event may have been missed)
-        try {
-          const version = await invoke<string>("get_app_version");
-          setAppVersion(version);
-          setIsReady(true);
-        } catch (e) {
-          console.warn("Failed to get app version:", e);
+    queue.forEach((item) => {
+      if (item.status === "done" && !notifiedIdsRef.current.has(item.id)) {
+        notifiedIdsRef.current.add(item.id);
+        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+          import("@tauri-apps/plugin-notification")
+            .then(async ({ isPermissionGranted, requestPermission, sendNotification }) => {
+              let granted = await isPermissionGranted();
+              if (!granted) {
+                const permission = await requestPermission();
+                granted = permission === "granted";
+              }
+              if (granted) {
+                sendNotification({
+                  title: "Download Complete",
+                  body: `${item.title || "Video"} has finished downloading.`,
+                });
+              }
+            })
+            .catch((err) => {
+              console.error("[Downlink] Failed to send notification:", err);
+            });
         }
-
-        await refreshQueue();
-        await refreshHistory();
-
-        // Check for app updates in the background
-        try {
-          const updateInfo = await invoke<AppUpdateInfo>("check_app_update");
-          if (updateInfo.available) {
-            console.log("App update available:", updateInfo.latest_version);
-            
-            setUpdateAvailable(prev => ({
-              ...prev,
-              available: true,
-              latestVersion: updateInfo.latest_version,
-              releaseNotes: updateInfo.release_notes ?? null,
-              dismissed: false,
-            }));
-          }
-        } catch (e) {
-          // Silently fail update check - not critical
-          console.warn("Failed to check for updates:", e);
-        }
-      } catch (e) {
-        console.error("Failed to load initial data:", e);
       }
-    };
+    });
+  }, [queue]);
 
-    loadInitialData();
+  useEffect(() => {
+    if (isTauri) {
+      refreshQueue();
+      refreshHistory();
+    }
   }, [isTauri, refreshQueue, refreshHistory]);
 
-  // Dismiss update notification
-  const dismissUpdateNotification = useCallback(() => {
-    setUpdateAvailable(prev => ({ ...prev, dismissed: true }));
-  }, []);
-
-  // URL operations
-  const addUrls = useCallback(
-    async (urlsText: string, options: AddUrlsOptions): Promise<AddUrlsResult> => {
-      const result = await invoke<AddUrlsResult>("add_urls", {
-        urlsText: urlsText,
-        options,
-      });
-      await refreshQueue();
-      return result;
-    },
-    [refreshQueue]
+  const actions = createDownlinkActions(
+    refreshQueue,
+    refreshHistory,
+    setLastError
   );
-
-  const fetchMetadata = useCallback(
-    async (
-      url: string,
-      options: FetchMetadataOptions
-    ): Promise<FetchMetadataResult> => {
-      // NOTE: fetchMetadata is only for preview — it must NOT refresh the queue.
-      // Calling refreshQueue here was causing unnecessary full-queue reloads on
-      // every URL paste. Queue state is kept in sync via real-time backend events.
-      return invoke<FetchMetadataResult>("fetch_metadata", { url, options });
-    },
-    []
-  );
-
-  const fastFetchMetadata = useCallback(
-    async (url: string): Promise<FetchMetadataResult | null> => {
-      return invoke<FetchMetadataResult | null>("fast_fetch_metadata", { url });
-    },
-    []
-  );
-
-  const previewPlaylist = useCallback(
-    async (playlistUrl: string): Promise<PreviewPlaylistResult> => {
-      return invoke<PreviewPlaylistResult>("preview_playlist", {
-        playlistUrl: playlistUrl,
-      });
-    },
-    []
-  );
-
-  const expandPlaylist = useCallback(
-    async (
-      playlistUrl: string,
-      options: ExpandPlaylistOptions
-    ): Promise<ExpandPlaylistResult> => {
-      const result = await invoke<ExpandPlaylistResult>("expand_playlist", {
-        playlistUrl: playlistUrl,
-        options,
-      });
-      await refreshQueue();
-      return result;
-    },
-    [refreshQueue]
-  );
-
-  const extractUrls = useCallback(async (text: string): Promise<string[]> => {
-    return invoke<string[]>("extract_urls_from_text", { text });
-  }, []);
-
-  // Download control
-  const startDownload = useCallback(async (id: string) => {
-    await invoke("start_download", { id });
-    await refreshQueue();
-  }, [refreshQueue]);
-
-  const stopDownload = useCallback(async (id: string) => {
-    await invoke("stop_download", { id });
-    // Don't refreshQueue here - the DownloadStopped event handler preserves progress
-    // If we refresh, we'd lose the progress since it's not saved to DB
-  }, []);
-
-  const cancelDownload = useCallback(async (id: string) => {
-    await invoke("cancel_download", { id });
-    await refreshQueue();
-  }, [refreshQueue]);
-
-  const retryDownload = useCallback(async (id: string) => {
-    await invoke("retry_download", { id });
-    await refreshQueue();
-  }, [refreshQueue]);
-
-  const startAllDownloads = useCallback(async () => {
-    await invoke("start_all_downloads");
-    await refreshQueue();
-  }, [refreshQueue]);
-
-  const stopAllDownloads = useCallback(async () => {
-    await invoke("stop_all_downloads");
-    await refreshQueue();
-  }, [refreshQueue]);
-
-  const removeDownload = useCallback(
-    async (id: string) => {
-      // Optimistic removal — card disappears instantly
-      setQueue((prev) => prev.filter((item) => item.id !== id));
-      setHistory((prev) => prev.filter((item) => item.id !== id));
-      try {
-        await invoke("remove_download", { id });
-        // Sync both state slices with ground truth
-        await refreshQueue();
-        await refreshHistory();
-      } catch (e) {
-        // On failure, re-sync to restore correct state
-        await refreshQueue();
-        await refreshHistory();
-      }
-    },
-    [refreshQueue, refreshHistory]
-  );
-
-  const clearQueue = useCallback(async () => {
-    await invoke("clear_queue");
-    await refreshQueue();
-  }, [refreshQueue]);
-
-  const clearHistory = useCallback(async () => {
-    await invoke("clear_history");
-    await refreshHistory();
-  }, [refreshHistory]);
-
-  // Settings
-  const getSettings = useCallback(async (): Promise<UserSettings> => {
-    return invoke<UserSettings>("get_settings");
-  }, []);
-
-  const saveSettings = useCallback(
-    async (settings: UserSettings): Promise<void> => {
-      await invoke("save_settings", { settings });
-    },
-    []
-  );
-
-  const getWindowState = useCallback(async (): Promise<WindowState> => {
-    return invoke<WindowState>("get_window_state");
-  }, []);
-
-  const saveWindowState = useCallback(
-    async (windowState: WindowState): Promise<void> => {
-      await invoke("save_window_state", { windowState: windowState });
-    },
-    []
-  );
-
-  // Tools
-  const getToolchainStatus = useCallback(async (): Promise<ToolchainStatus> => {
-    return invoke<ToolchainStatus>("get_toolchain_status");
-  }, []);
-
-  const checkForUpdates = useCallback(async (): Promise<string[]> => {
-    return invoke<string[]>("check_for_updates");
-  }, []);
-
-  const updateTool = useCallback(async (toolName: string): Promise<string> => {
-    return invoke<string>("update_tool", { toolName: toolName });
-  }, []);
-
-  // App updates
-  const checkAppUpdate = useCallback(async (): Promise<AppUpdateInfo> => {
-    return invoke<AppUpdateInfo>("check_app_update");
-  }, []);
-
-  const installAppUpdate = useCallback(async (): Promise<void> => {
-    if (updateAvailable.downloading) return; // Prevent concurrent downloads
-
-    setUpdateAvailable(prev => ({
-      ...prev,
-      downloading: true,
-      error: null,
-      downloadProgress: { downloaded: 0, total: null },
-    }));
-
-    try {
-      // Use the official Tauri updater plugin for proper update installation
-      const update = await check();
-      if (update) {
-        console.log(`Installing update ${update.version}...`);
-        
-        let downloadedBytes = 0;
-
-        await update.downloadAndInstall((event) => {
-          switch (event.event) {
-            case "Started":
-              console.log(`Started downloading update, size: ${event.data.contentLength}`);
-              setUpdateAvailable(prev => ({
-                ...prev,
-                downloadProgress: {
-                  downloaded: 0,
-                  total: event.data.contentLength ?? null,
-                }
-              }));
-              break;
-            case "Progress":
-              downloadedBytes += event.data.chunkLength;
-              setUpdateAvailable(prev => ({
-                ...prev,
-                downloadProgress: {
-                  downloaded: downloadedBytes,
-                  total: prev.downloadProgress?.total ?? null,
-                }
-              }));
-              break;
-            case "Finished":
-              console.log("Download finished");
-              setUpdateAvailable(prev => ({
-                ...prev,
-                downloading: false,
-                readyToInstall: true,
-                downloadProgress: null,
-              }));
-              break;
-          }
-        });
-      } else {
-        setUpdateAvailable(prev => ({ ...prev, downloading: false, error: "No update found during install check" }));
-      }
-    } catch (e) {
-      console.error("Failed to install update:", e);
-      setUpdateAvailable(prev => ({
-        ...prev,
-        downloading: false,
-        error: e instanceof Error ? e.message : String(e),
-      }));
-    }
-  }, [updateAvailable.downloading]);
-
-  const restartApp = useCallback(async (): Promise<void> => {
-    // Use the official Tauri process plugin for proper restart after update
-    await relaunch();
-  }, []);
-
-  // Presets
-  const getPresets = useCallback(async (): Promise<PresetInfo[]> => {
-    return invoke<PresetInfo[]>("get_presets");
-  }, []);
-
-  // Utilities
-  const getAppDataDir = useCallback(async (): Promise<string> => {
-    return invoke<string>("get_app_data_dir");
-  }, []);
-
-  const getDefaultDownloadDir = useCallback(async (): Promise<string> => {
-    return invoke<string>("get_default_download_dir");
-  }, []);
-
-  const openFile = useCallback(async (path: string): Promise<void> => {
-    await invoke("open_file", { path });
-  }, []);
-
-  const openFolder = useCallback(async (path: string): Promise<void> => {
-    await invoke("open_folder", { path });
-  }, []);
-
-  const checkWhisper = useCallback(async (): Promise<string> => {
-    return invoke<string>("check_whisper");
-  }, []);
-
-  const transcribeFile = useCallback(
-    async (
-      filePath: string,
-      model?: "tiny" | "base" | "small" | "medium"
-    ): Promise<{ srt_path: string; method: string }> => {
-      return invoke<{ srt_path: string; method: string }>("transcribe_file", {
-        filePath,
-        model: model ?? null,
-      });
-    },
-    []
-  );
-
-  const clearError = useCallback(() => {
-    setLastError(null);
-  }, []);
 
   return {
-    // State
     isTauri,
     isReady,
     appVersion,
     ytDlpVersion,
     ffmpegVersion,
-
-    // Update state
     updateAvailable,
-    dismissUpdateNotification,
-
-    // Queue state
+    dismissUpdateNotification: () =>
+      setUpdateAvailable((prev) => ({ ...prev, dismissed: true })),
     queue,
     history,
     refreshQueue,
     refreshHistory,
-
-    // URL operations
-    addUrls,
-    fetchMetadata,
-    fastFetchMetadata,
-    previewPlaylist,
-    expandPlaylist,
-    extractUrls,
-
-    // Download control
-    startDownload,
-    stopDownload,
-    cancelDownload,
-    retryDownload,
-    startAllDownloads,
-    stopAllDownloads,
-    removeDownload,
-    clearQueue,
-    clearHistory,
-
-    // Settings
-    getSettings,
-    saveSettings,
-    getWindowState,
-    saveWindowState,
-
-    // Tools
-    getToolchainStatus,
-    checkForUpdates,
-    updateTool,
-
-    // App updates
-    checkAppUpdate,
-    installAppUpdate,
-    restartApp,
-
-    // Presets
-    getPresets,
-
-    // Utilities
-    getAppDataDir,
-    getDefaultDownloadDir,
-    openFile,
-    openFolder,
-
-    // AI Transcription
-    checkWhisper,
-    transcribeFile,
-
-    // Error state
+    ...actions,
     lastError,
-    clearError,
+    clearError: () => setLastError(null),
   };
 }

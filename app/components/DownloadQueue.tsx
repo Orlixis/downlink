@@ -22,8 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { CloudDownload, Clock, Trash2, Zap, FolderOpen, GripVertical } from "lucide-react";
 import { DownloadItem } from "./DownloadItem";
-import type { WhisperModel } from "./DownloadItem";
-import type { QueueItem } from "../types";
+import type { QueueItem, WhisperModel } from "../types";
 import { formatSpeed } from "../types";
 
 interface DownloadQueueProps {
