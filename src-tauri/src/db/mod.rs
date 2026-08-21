@@ -1,4 +1,5 @@
 pub mod downloads;
+pub mod logs;
 pub mod migrations;
 pub mod types;
 

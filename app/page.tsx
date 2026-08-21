@@ -5,6 +5,7 @@ import { useDownlink } from "./hooks/useDownlink";
 import { useUrlPreviews } from "./hooks/useUrlPreviews";
 import { useClipboardWatcher } from "./hooks/useClipboardWatcher";
 import { useDropOrbit } from "./hooks/useDropOrbit";
+import { usePlaylistDialog } from "./hooks/usePlaylistDialog";
 import { SettingsModal } from "./components/SettingsModal";
 import { PlaylistDialog } from "./components/PlaylistDialog";
 import { HeaderBar } from "./components/HeaderBar";
@@ -18,12 +19,11 @@ import { TrimModal } from "./components/TrimModal";
 import { BlackHoleOverlay } from "./components/BlackHoleOverlay";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
-import type { UserSettings, FetchMetadataResult } from "./types";
+import type { UserSettings } from "./types";
 
 export default function Home() {
   const downlink = useDownlink();
 
-  // Form state
   const [urlInput, setUrlInput] = useState("");
   const [destination, setDestination] = useState("");
   const [presetId, setPresetId] = useState<string>(DEFAULT_PRESET_ID);
@@ -35,7 +35,6 @@ export default function Home() {
   const [isTrimModalOpen, setIsTrimModalOpen] = useState(false);
   const [embedMetaEnabled, setEmbedMetaEnabled] = useState(false);
 
-  // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
@@ -46,11 +45,9 @@ export default function Home() {
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // URL Previews Hook
   const {
     extractedUrls,
     rangeGroups,
-    rangeExpandedSet,
     allPreviews,
     previewData,
     previewError,
@@ -66,17 +63,10 @@ export default function Home() {
     fastFetchMetadata: downlink.fastFetchMetadata,
   });
 
-  // Clipboard Watcher Hook
   const { clipboardUrl, dismissClipboardUrl } = useClipboardWatcher({
     isTauri: downlink.isTauri,
-    onUrlDetected: (url) => {
-      if (!urlInput.includes(url)) {
-        // Clipboard detection banner
-      }
-    },
   });
 
-  // Drop Orbit Hook
   const {
     isDragging,
     orbitingUrls,
@@ -91,23 +81,19 @@ export default function Home() {
     },
   });
 
-  // Playlist dialog state
-  const [playlistDialogOpen, setPlaylistDialogOpen] = useState(false);
-  const [playlistDialogData, setPlaylistDialogData] = useState<{
-    url: string;
-    metadata: FetchMetadataResult;
-  } | null>(null);
-  const [playlistVideos, setPlaylistVideos] = useState<
-    Array<{
-      id: string;
-      url: string;
-      title: string;
-      thumbnail_url?: string;
-      duration_seconds?: number;
-      uploader?: string;
-    }>
-  >([]);
-  const [isLoadingPlaylistVideos, setIsLoadingPlaylistVideos] = useState(false);
+  const playlist = usePlaylistDialog({
+    previewPlaylist: downlink.previewPlaylist,
+    addUrls: downlink.addUrls,
+    expandPlaylist: downlink.expandPlaylist,
+    startAllDownloads: downlink.startAllDownloads,
+    presetId,
+    destination,
+    autoStart: settings?.general.auto_start !== false,
+    onSuccess: () => {
+      setUrlInput("");
+      clearPreviews();
+    },
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem("downlink:queue-width");
@@ -117,16 +103,6 @@ export default function Home() {
         setQueueWidth(parsed);
       }
     }
-  }, []);
-
-  const handleQueueWidthChange = useCallback((w: number) => {
-    setQueueWidth(w);
-    localStorage.setItem("downlink:queue-width", String(w));
-  }, []);
-
-  const openSettings = useCallback((tab?: string) => {
-    setSettingsInitialTab(tab);
-    setSettingsOpen(true);
   }, []);
 
   const previewDuration = previewData?.duration_seconds ?? 0;
@@ -173,11 +149,7 @@ export default function Home() {
     if (extractedUrls.length === 0 || isSubmitting) return;
 
     if (previewData?.is_playlist && allPreviews.length === 1 && rangeGroups.length === 0) {
-      setPlaylistDialogData({
-        url: allPreviews[0].url,
-        metadata: previewData,
-      });
-      setPlaylistDialogOpen(true);
+      playlist.openDialog(allPreviews[0].url, previewData);
       return;
     }
 
@@ -261,95 +233,8 @@ export default function Home() {
     subtitlesEnabled,
     sponsorBlockEnabled,
     clearPreviews,
+    playlist,
   ]);
-
-  const handlePlaylistConfirm = useCallback(
-    async (downloadPlaylist: boolean, selectedVideoIds?: string[]) => {
-      if (!playlistDialogData) return;
-
-      setIsSubmitting(true);
-      setIsAnimatingOut(true);
-      const { url, metadata } = playlistDialogData;
-
-      await new Promise((resolve) => setTimeout(resolve, 1100));
-
-      try {
-        if (downloadPlaylist) {
-          if (selectedVideoIds && selectedVideoIds.length > 0 && playlistVideos.length > 0) {
-            const selectedVideos = playlistVideos.filter((v) => selectedVideoIds.includes(v.id));
-            for (const video of selectedVideos) {
-              await downlink.addUrls(video.url, {
-                preset_id: presetId,
-                output_dir: destination,
-                parent_id: null,
-                source_kind: "single",
-                title: video.title ?? null,
-                uploader: video.uploader ?? null,
-                thumbnail_url: video.thumbnail_url ?? null,
-                duration_seconds: video.duration_seconds ?? null,
-              });
-            }
-          } else {
-            await downlink.expandPlaylist(url, { preset_id: presetId, output_dir: destination });
-          }
-        } else {
-          await downlink.addUrls(url, {
-            preset_id: presetId,
-            output_dir: destination,
-            parent_id: null,
-            source_kind: "single",
-            title: metadata.title ?? null,
-            uploader: metadata.uploader ?? null,
-            thumbnail_url: metadata.thumbnail_url ?? null,
-            duration_seconds: metadata.duration_seconds ?? null,
-            stream_url: metadata.stream_url ?? null,
-          });
-        }
-
-        if (settings?.general.auto_start !== false) {
-          await downlink.startAllDownloads();
-        }
-
-        setUrlInput("");
-        clearPreviews();
-      } catch (e) {
-        console.error("Failed to handle playlist:", e);
-      } finally {
-        setIsSubmitting(false);
-        setTimeout(() => {
-          setIsAnimatingOut(false);
-          setPlaylistDialogOpen(false);
-          setPlaylistDialogData(null);
-          setPlaylistVideos([]);
-        }, 200);
-      }
-    },
-    [playlistDialogData, playlistVideos, downlink, presetId, destination, settings, clearPreviews]
-  );
-
-  const handleLoadPlaylistVideos = useCallback(async () => {
-    if (!playlistDialogData) return;
-    setIsLoadingPlaylistVideos(true);
-    try {
-      const result = await downlink.previewPlaylist(playlistDialogData.url);
-      if (result.videos) {
-        setPlaylistVideos(
-          result.videos.map((v) => ({
-            id: v.id,
-            url: v.url,
-            title: v.title ?? "Untitled",
-            thumbnail_url: v.thumbnail_url ?? undefined,
-            duration_seconds: v.duration_seconds ?? undefined,
-            uploader: v.uploader ?? undefined,
-          }))
-        );
-      }
-    } catch (e) {
-      console.error("Failed to load playlist videos:", e);
-    } finally {
-      setIsLoadingPlaylistVideos(false);
-    }
-  }, [playlistDialogData, downlink]);
 
   return (
     <div
@@ -365,12 +250,6 @@ export default function Home() {
           clipboardUrl={clipboardUrl}
           orbitingUrls={orbitingUrls}
           onDropPackage={(x, y, urls) => {
-            const newPackages = urls.map((url) => ({
-              id: Math.random().toString(36).substring(2, 9),
-              url,
-              startX: x + (Math.random() * 40 - 20),
-              startY: y + (Math.random() * 40 - 20),
-            }));
             clearOrbitingUrls();
             urls.forEach((u) => setUrlInput((prev) => (prev ? `${prev.trim()}\n${u}` : u)));
           }}
@@ -395,7 +274,7 @@ export default function Home() {
         }}
         onPaste={handlePaste}
         onSubmit={handleDownload}
-        onSettingsClick={() => openSettings()}
+        onSettingsClick={() => setSettingsOpen(true)}
         isLoading={previewLoading}
         inputRef={inputRef}
         urlCount={extractedUrls.length}
@@ -470,7 +349,10 @@ export default function Home() {
 
         <ResizableDivider
           width={queueWidth}
-          onWidthChange={handleQueueWidthChange}
+          onWidthChange={(w) => {
+            setQueueWidth(w);
+            localStorage.setItem("downlink:queue-width", String(w));
+          }}
           minWidth={260}
           maxWidth={480}
         />
@@ -500,7 +382,10 @@ export default function Home() {
         appVersion={downlink.appVersion ?? undefined}
         ytDlpVersion={downlink.ytDlpVersion}
         ffmpegVersion={downlink.ffmpegVersion}
-        onOpenSettings={openSettings}
+        onOpenSettings={(tab) => {
+          setSettingsInitialTab(tab);
+          setSettingsOpen(true);
+        }}
       />
 
       <SettingsModal
@@ -543,22 +428,19 @@ export default function Home() {
         }}
       />
 
-      {playlistDialogData && (
+      {playlist.playlistDialogData && (
         <PlaylistDialog
-          isOpen={playlistDialogOpen}
-          isExiting={isAnimatingOut}
-          onClose={() => {
-            setPlaylistDialogOpen(false);
-            setPlaylistVideos([]);
-          }}
-          onConfirm={handlePlaylistConfirm}
-          playlistTitle={playlistDialogData.metadata.playlist_title ?? "Playlist"}
-          videoTitle={playlistDialogData.metadata.title ?? "Video"}
-          videoThumbnail={playlistDialogData.metadata.thumbnail_url ?? undefined}
-          playlistCount={playlistDialogData.metadata.playlist_count_hint ?? 0}
-          playlistVideos={playlistVideos}
-          isLoadingVideos={isLoadingPlaylistVideos}
-          onLoadPlaylistVideos={handleLoadPlaylistVideos}
+          isOpen={playlist.playlistDialogOpen}
+          isExiting={playlist.isAnimatingOut}
+          onClose={playlist.closeDialog}
+          onConfirm={playlist.confirm}
+          playlistTitle={playlist.playlistDialogData.metadata.playlist_title ?? "Playlist"}
+          videoTitle={playlist.playlistDialogData.metadata.title ?? "Video"}
+          videoThumbnail={playlist.playlistDialogData.metadata.thumbnail_url ?? undefined}
+          playlistCount={playlist.playlistDialogData.metadata.playlist_count_hint ?? 0}
+          playlistVideos={playlist.playlistVideos}
+          isLoadingVideos={playlist.isLoadingVideos}
+          onLoadPlaylistVideos={playlist.loadVideos}
         />
       )}
     </div>

@@ -27,7 +27,7 @@ pub struct Action {
 }
 
 /// Stable error codes to allow UX mapping and analytics (if added later).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
     Unknown,

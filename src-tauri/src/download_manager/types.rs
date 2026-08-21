@@ -104,27 +104,20 @@ impl Preset {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+use crate::db::DownloadStatus;
+
+#[derive(Debug, Clone)]
 pub struct DownloadItemInfo {
-    pub id: String,
-    pub url: String,
-    pub title: Option<String>,
-    pub uploader: Option<String>,
-    pub duration_seconds: Option<u64>,
-    pub thumbnail_url: Option<String>,
-    pub status: String,
-    pub progress_percent: Option<f64>,
-    pub bytes_downloaded: Option<u64>,
-    pub bytes_total: Option<u64>,
-    pub speed_bps: Option<u64>,
-    pub eta_seconds: Option<u64>,
-    pub phase: Option<String>,
-    pub error_code: Option<String>,
-    pub error_message: Option<String>,
-    pub final_path: Option<String>,
-    pub created_at: String,
+    pub source_url: String,
     pub stream_url: Option<String>,
     pub referer_url: Option<String>,
+    pub title: Option<String>,
+    pub uploader: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub duration_seconds: Option<i64>,
+    pub preset_id: String,
+    pub output_dir: String,
+    pub status: DownloadStatus,
 }
 
 #[derive(Debug, Clone)]
