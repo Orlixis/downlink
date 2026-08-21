@@ -1,6 +1,7 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "../components/Toast";
 import type {
   AddUrlsOptions,
   AddUrlsResult,
@@ -12,11 +13,9 @@ import type {
   PreviewPlaylistResult,
   PresetInfo,
   QueueItem,
-  ToolchainStatus,
   UserSettings,
-  WindowState,
   WhisperModel,
-} from "@/app/types";
+} from "../types";
 
 export function createDownlinkActions(
   refreshQueue: () => Promise<void>,
@@ -25,26 +24,58 @@ export function createDownlinkActions(
 ) {
   const addUrls = async (
     urlsText: string,
-    options: AddUrlsOptions
+    options?: Partial<AddUrlsOptions>
   ): Promise<AddUrlsResult> => {
     try {
+      const fullOptions: AddUrlsOptions = {
+        preset_id: options?.preset_id || "best",
+        output_dir: options?.output_dir || "",
+        parent_id: options?.parent_id ?? null,
+        source_kind: options?.source_kind ?? "single",
+        title: options?.title ?? null,
+        uploader: options?.uploader ?? null,
+        thumbnail_url: options?.thumbnail_url ?? null,
+        duration_seconds: options?.duration_seconds ?? null,
+        stream_url: options?.stream_url ?? null,
+        referer_url: options?.referer_url ?? null,
+        subtitles_enabled: options?.subtitles_enabled,
+        sponsorblock_enabled: options?.sponsorblock_enabled,
+      };
+
       const result = await invoke<AddUrlsResult>("add_urls", {
         urlsText,
-        options,
+        options: fullOptions,
       });
       await refreshQueue();
       return result;
     } catch (e) {
-      setLastError(String(e));
+      const msg = String(e);
+      setLastError(msg);
+      toast.error(msg);
       throw e;
+    }
+  };
+
+  const startAllDownloads = async (ids?: string[]) => {
+    try {
+      await invoke("start_all_downloads", { ids: ids ?? null });
+      await refreshQueue();
+    } catch (e) {
+      setLastError(String(e));
+      toast.error(String(e));
     }
   };
 
   const fetchMetadata = async (
     url: string,
-    options: FetchMetadataOptions
+    opts?: { preset_id?: string; output_dir?: string }
   ): Promise<FetchMetadataResult> => {
     try {
+      const options: FetchMetadataOptions = {
+        preset_id: opts?.preset_id || "best",
+        output_dir: opts?.output_dir || "",
+      };
+
       return await invoke<FetchMetadataResult>("fetch_metadata", {
         url,
         options,
@@ -59,21 +90,28 @@ export function createDownlinkActions(
     url: string
   ): Promise<FetchMetadataResult | null> => {
     try {
-      return await invoke<FetchMetadataResult | null>("fast_fetch_preview", {
+      return await invoke<FetchMetadataResult | null>("fast_fetch_metadata", {
         url,
       });
     } catch (e) {
       setLastError(String(e));
-      throw e;
+      return null;
     }
   };
 
   const previewPlaylist = async (
-    playlistUrl: string
+    url: string,
+    opts?: { preset_id?: string; output_dir?: string }
   ): Promise<PreviewPlaylistResult> => {
     try {
+      const options: FetchMetadataOptions = {
+        preset_id: opts?.preset_id || "best",
+        output_dir: opts?.output_dir || "",
+      };
+
       return await invoke<PreviewPlaylistResult>("preview_playlist", {
-        playlistUrl,
+        url,
+        options,
       });
     } catch (e) {
       setLastError(String(e));
@@ -82,115 +120,20 @@ export function createDownlinkActions(
   };
 
   const expandPlaylist = async (
-    playlistUrl: string,
-    options: ExpandPlaylistOptions
+    url: string,
+    opts?: { preset_id?: string; output_dir?: string; parent_id?: string | null }
   ): Promise<ExpandPlaylistResult> => {
     try {
-      const result = await invoke<ExpandPlaylistResult>("expand_playlist", {
-        playlistUrl,
+      const options: ExpandPlaylistOptions = {
+        preset_id: opts?.preset_id || "best",
+        output_dir: opts?.output_dir || "",
+        parent_id: opts?.parent_id ?? null,
+      };
+
+      return await invoke<ExpandPlaylistResult>("expand_playlist", {
+        url,
         options,
       });
-      await refreshQueue();
-      return result;
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const extractUrls = async (text: string): Promise<string[]> => {
-    try {
-      return await invoke<string[]>("extract_urls", { text });
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const startDownload = async (id: string): Promise<void> => {
-    try {
-      await invoke("start_download", { id });
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const stopDownload = async (id: string): Promise<void> => {
-    try {
-      await invoke("stop_download", { id });
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const cancelDownload = async (id: string): Promise<void> => {
-    try {
-      await invoke("cancel_download", { id });
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const retryDownload = async (id: string): Promise<void> => {
-    try {
-      await invoke("retry_download", { id });
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const startAllDownloads = async (): Promise<void> => {
-    try {
-      await invoke("start_all_downloads");
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const stopAllDownloads = async (): Promise<void> => {
-    try {
-      await invoke("stop_all_downloads");
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const removeDownload = async (id: string): Promise<void> => {
-    try {
-      await invoke("remove_download", { id });
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const clearQueue = async (): Promise<void> => {
-    try {
-      await invoke("clear_queue");
-      await refreshQueue();
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const clearHistory = async (): Promise<void> => {
-    try {
-      await invoke("clear_history");
-      await refreshHistory();
     } catch (e) {
       setLastError(String(e));
       throw e;
@@ -211,52 +154,17 @@ export function createDownlinkActions(
       await invoke("save_settings", { settings });
     } catch (e) {
       setLastError(String(e));
+      toast.error(String(e));
       throw e;
     }
   };
 
-  const getWindowState = async (): Promise<WindowState> => {
+  const getDownloadDirectory = async (): Promise<string> => {
     try {
-      return await invoke<WindowState>("get_window_state");
+      return await invoke<string>("get_download_directory");
     } catch (e) {
       setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const saveWindowState = async (windowState: WindowState): Promise<void> => {
-    try {
-      await invoke("save_window_state", { windowState });
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const getToolchainStatus = async (): Promise<ToolchainStatus> => {
-    try {
-      return await invoke<ToolchainStatus>("get_toolchain_status");
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const checkForUpdates = async (): Promise<string[]> => {
-    try {
-      return await invoke<string[]>("check_for_updates");
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
-    }
-  };
-
-  const updateTool = async (toolName: string): Promise<string> => {
-    try {
-      return await invoke<string>("update_tool", { toolName });
-    } catch (e) {
-      setLastError(String(e));
-      throw e;
+      return "";
     }
   };
 
@@ -274,6 +182,7 @@ export function createDownlinkActions(
       await invoke("install_app_update");
     } catch (e) {
       setLastError(String(e));
+      toast.error(String(e));
       throw e;
     }
   };
@@ -283,111 +192,187 @@ export function createDownlinkActions(
       await invoke("restart_app");
     } catch (e) {
       setLastError(String(e));
+      toast.error(String(e));
       throw e;
     }
   };
 
-  const getPresets = async (): Promise<PresetInfo[]> => {
+  const stopDownload = async (id: string) => {
     try {
-      return await invoke<PresetInfo[]>("get_presets");
+      await invoke("stop_download", { id });
+      await refreshQueue();
     } catch (e) {
       setLastError(String(e));
-      throw e;
     }
   };
 
-  const getAppDataDir = async (): Promise<string> => {
+  const cancelDownload = async (id: string) => {
     try {
-      return await invoke<string>("get_app_data_dir");
+      await invoke("cancel_download", { id });
+      await refreshQueue();
     } catch (e) {
       setLastError(String(e));
-      throw e;
     }
   };
 
-  const getDefaultDownloadDir = async (): Promise<string> => {
+  const removeDownload = async (id: string) => {
     try {
-      return await invoke<string>("get_default_download_dir");
+      await invoke("remove_download", { id });
+      await refreshQueue();
+      await refreshHistory();
     } catch (e) {
       setLastError(String(e));
-      throw e;
     }
   };
 
-  const openFile = async (path: string): Promise<void> => {
+  const retryDownload = async (id: string) => {
+    try {
+      await invoke("retry_download", { id });
+      await refreshQueue();
+      await refreshHistory();
+    } catch (e) {
+      setLastError(String(e));
+    }
+  };
+
+  const openFile = async (path: string, id?: string) => {
     try {
       await invoke("open_file", { path });
     } catch (e) {
-      setLastError(String(e));
-      throw e;
+      const errStr = String(e);
+      setLastError(errStr);
+      if (
+        id &&
+        (errStr.toLowerCase().includes("not found") ||
+          errStr.toLowerCase().includes("does not exist") ||
+          errStr.toLowerCase().includes("no such file"))
+      ) {
+        toast.info("File not found on disk. Removed from download history.");
+        await removeDownload(id);
+      } else {
+        toast.error(`Cannot open file: ${errStr}`);
+      }
     }
   };
 
-  const openFolder = async (path: string): Promise<void> => {
+  const openFolder = async (path: string, id?: string) => {
     try {
       await invoke("open_folder", { path });
     } catch (e) {
-      setLastError(String(e));
-      throw e;
+      const errStr = String(e);
+      setLastError(errStr);
+      if (
+        id &&
+        (errStr.toLowerCase().includes("not found") ||
+          errStr.toLowerCase().includes("does not exist") ||
+          errStr.toLowerCase().includes("no such file"))
+      ) {
+        toast.info("Folder or file not found on disk. Removed from history.");
+        await removeDownload(id);
+      } else {
+        toast.error(`Cannot open folder: ${errStr}`);
+      }
     }
   };
 
-  const checkWhisper = async (): Promise<string> => {
+  const clearQueue = async () => {
     try {
-      return await invoke<string>("check_whisper");
+      await invoke("clear_queue");
+      await refreshQueue();
     } catch (e) {
       setLastError(String(e));
-      throw e;
+    }
+  };
+
+  const clearHistory = async () => {
+    try {
+      await invoke("clear_history");
+      await refreshHistory();
+    } catch (e) {
+      setLastError(String(e));
     }
   };
 
   const transcribeFile = async (
     filePath: string,
-    model: WhisperModel = "base"
+    model: WhisperModel
   ): Promise<{ srt_path: string; method: string }> => {
     try {
-      return await invoke<{ srt_path: string; method: string }>(
-        "transcribe_file",
-        { filePath, model }
-      );
+      return await invoke<{ srt_path: string; method: string }>("transcribe_file", {
+        filePath,
+        model,
+      });
     } catch (e) {
-      setLastError(String(e));
+      const msg = String(e);
+      setLastError(msg);
+      toast.error(`Transcription failed: ${msg}`);
       throw e;
+    }
+  };
+
+  const updateDownloadTask = async (options: {
+    id: string;
+    source_url: string;
+    title?: string | null;
+    output_dir: string;
+    referer_url?: string | null;
+    preset_id: string;
+  }) => {
+    try {
+      await invoke("update_download_task", { options });
+      await refreshQueue();
+      await refreshHistory();
+      toast.success("Download task updated successfully");
+    } catch (e) {
+      const msg = String(e);
+      setLastError(msg);
+      toast.error(`Failed to update task: ${msg}`);
+      throw e;
+    }
+  };
+
+  const cleanMissingDownloads = async (): Promise<string[]> => {
+    try {
+      const removedIds = await invoke<string[]>("clean_missing_downloads");
+      await refreshHistory();
+      await refreshQueue();
+      if (removedIds.length > 0) {
+        toast.success(`Cleaned ${removedIds.length} missing downloads from history`);
+      } else {
+        toast.info("No missing files found in download history");
+      }
+      return removedIds;
+    } catch (e) {
+      const msg = String(e);
+      setLastError(msg);
+      toast.error(`Clean missing failed: ${msg}`);
+      return [];
     }
   };
 
   return {
     addUrls,
+    startAllDownloads,
     fetchMetadata,
     fastFetchMetadata,
     previewPlaylist,
     expandPlaylist,
-    extractUrls,
-    startDownload,
-    stopDownload,
-    cancelDownload,
-    retryDownload,
-    startAllDownloads,
-    stopAllDownloads,
-    removeDownload,
-    clearQueue,
-    clearHistory,
     getSettings,
     saveSettings,
-    getWindowState,
-    saveWindowState,
-    getToolchainStatus,
-    checkForUpdates,
-    updateTool,
+    getDownloadDirectory,
     checkAppUpdate,
     installAppUpdate,
     restartApp,
-    getPresets,
-    getAppDataDir,
-    getDefaultDownloadDir,
+    stopDownload,
+    cancelDownload,
+    removeDownload,
+    retryDownload,
     openFile,
     openFolder,
-    checkWhisper,
+    clearQueue,
+    clearHistory,
     transcribeFile,
+    updateDownloadTask,
+    cleanMissingDownloads,
   };
 }

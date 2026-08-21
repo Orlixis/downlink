@@ -20,8 +20,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CloudDownload, Clock, Trash2, Zap, FolderOpen, GripVertical } from "lucide-react";
-import { DownloadItem } from "./DownloadItem";
+import { CloudDownload, Clock, Trash2, Zap, FolderOpen, GripVertical, Sparkles } from "lucide-react";
+import { DownloadItem } from "./downloads";
 import type { QueueItem, WhisperModel } from "../types";
 import { formatSpeed } from "../types";
 
@@ -32,10 +32,12 @@ interface DownloadQueueProps {
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
-  onOpen: (path: string) => void;
-  onOpenFolder: (path: string) => void;
+  onOpen: (path: string, id?: string) => void;
+  onOpenFolder: (path: string, id?: string) => void;
   onClearQueue: () => void;
   onClearHistory: () => void;
+  onEdit?: (item: QueueItem) => void;
+  onCleanMissing?: () => Promise<string[]>;
   onTranscribe?: (filePath: string, model: WhisperModel) => Promise<{ srt_path: string; method: string }>;
 }
 
@@ -51,8 +53,9 @@ function SortableQueueItem({
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
-  onOpen: (path: string) => void;
-  onOpenFolder: (path: string) => void;
+  onOpen: (path: string, id?: string) => void;
+  onOpenFolder: (path: string, id?: string) => void;
+  onEdit?: (item: QueueItem) => void;
   onTranscribe?: (filePath: string, model: WhisperModel) => Promise<{ srt_path: string; method: string }>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -83,7 +86,7 @@ function SortableQueueItem({
           tabIndex={-1}
           aria-label="Drag to reorder"
         >
-          <GripVertical className="h-3.5 w-3.5 text-zinc-600" />
+          <GripVertical className="h-3.5 w-3.5 text-zinc-500" />
         </button>
       )}
 
@@ -96,6 +99,7 @@ function SortableQueueItem({
           onRetry={props.onRetry}
           onOpen={props.onOpen}
           onOpenFolder={props.onOpenFolder}
+          onEdit={props.onEdit}
           onTranscribe={props.onTranscribe}
         />
       </div>
@@ -115,128 +119,160 @@ export function DownloadQueue({
   onOpenFolder,
   onClearQueue,
   onClearHistory,
+  onEdit,
+  onCleanMissing,
   onTranscribe,
 }: DownloadQueueProps) {
   const [showHistory, setShowHistory] = useState(false);
-  const [orderedQueue, setOrderedQueue] = useState<QueueItem[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  // Keep orderedQueue in sync with queue prop, inserting new items
-  const displayQueue = (() => {
-    if (orderedQueue.length === 0) return queue;
-    const queueIds = new Set(queue.map((q) => q.id));
-    const orderedIds = new Set(orderedQueue.map((q) => q.id));
-    // Remove items no longer in queue, add new ones at end
-    const filtered = orderedQueue.filter((q) => queueIds.has(q.id));
-    const newItems = queue.filter((q) => !orderedIds.has(q.id));
-    return [...filtered, ...newItems];
-  })();
+  const [localQueueOrder, setLocalQueueOrder] = useState<string[]>([]);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
   );
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    if (over && active.id !== over.id) {
-      setOrderedQueue((prev) => {
-        const base = prev.length > 0 ? prev : queue;
-        const oldIndex = base.findIndex((q) => q.id === active.id);
-        const newIndex = base.findIndex((q) => q.id === over.id);
-        return arrayMove(base, oldIndex, newIndex);
-      });
-    }
-  };
-
-  const activeItem = activeId ? displayQueue.find((q) => q.id === activeId) : null;
-
-  const activeItems = queue.filter(
-    (q) => q.status === "downloading" || q.status === "postprocessing"
-  );
-  const pendingCount = queue.filter(
-    (q) => q.status === "queued" || q.status === "ready" || q.status === "fetching"
-  ).length;
-
-  const totalSpeedBps = activeItems.reduce((sum, item) => sum + (item.speed_bps ?? 0), 0);
-  const hasActiveDownloads = activeItems.length > 0;
+  const displayQueue = [...queue].sort((a, b) => {
+    const aIdx = localQueueOrder.indexOf(a.id);
+    const bIdx = localQueueOrder.indexOf(b.id);
+    if (aIdx === -1 && bIdx === -1) return 0;
+    if (aIdx === -1) return 1;
+    if (bIdx === -1) return -1;
+    return aIdx - bIdx;
+  });
 
   const items = showHistory ? history : displayQueue;
   const isEmpty = items.length === 0;
 
-  // "Reveal All" — history items with a local path
-  const completedWithPath = history.filter((h) => h.final_path);
+  const activeItems = queue.filter(
+    (item) =>
+      item.status === "downloading" ||
+      item.status === "fetching" ||
+      item.status === "postprocessing"
+  );
+  const pendingCount = queue.filter(
+    (item) => item.status === "queued" || item.status === "ready"
+  ).length;
+
+  const totalSpeedBps = activeItems.reduce(
+    (sum, item) => sum + (item.speed_bps ?? 0),
+    0
+  );
+
+  const completedWithPath = history.filter((item) => item.final_path != null);
   const showRevealAll = showHistory && completedWithPath.length >= 2;
 
   const handleRevealAll = () => {
-    // Open the folder of the first completed item — macOS Finder will highlight it
-    const first = completedWithPath[0];
-    if (first?.final_path) onOpenFolder(first.final_path);
+    const paths = completedWithPath.map((item) => item.final_path!);
+    paths.forEach((p, idx) => {
+      setTimeout(() => onOpenFolder(p), idx * 100);
+    });
   };
 
-  return (
-    <div className="flex w-full flex-col border-l border-zinc-800/80 bg-transparent h-full">
-      {/* ── Header / Tabs ──────────────────────────────── */}
-      <div className="flex border-b border-zinc-800/80 px-1 pt-1">
-        <button
-          type="button"
-          onClick={() => setShowHistory(false)}
-          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg px-2 py-2.5 text-xs font-medium transition-colors ${
-            !showHistory ? "text-white" : "text-zinc-500 hover:text-zinc-300"
-          }`}
-        >
-          <CloudDownload className="h-3.5 w-3.5" />
-          <span>Downloads</span>
-          {queue.length > 0 && (
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${
-                !showHistory ? "bg-blue-500/20 text-blue-400" : "bg-zinc-800 text-zinc-500"
-              }`}
-            >
-              {queue.length}
-            </span>
-          )}
-          {!showHistory && (
-            <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-blue-500" />
-          )}
-        </button>
+  const handleCleanMissing = async () => {
+    if (!onCleanMissing || isCleaning) return;
+    setIsCleaning(true);
+    try {
+      await onCleanMissing();
+    } finally {
+      setIsCleaning(false);
+    }
+  };
 
-        <button
-          type="button"
-          onClick={() => setShowHistory(true)}
-          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-t-lg px-2 py-2.5 text-xs font-medium transition-colors ${
-            showHistory ? "text-white" : "text-zinc-500 hover:text-zinc-300"
-          }`}
-        >
-          <Clock className="h-3.5 w-3.5" />
-          <span>History</span>
-          {history.length > 0 && (
-            <span
-              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${
-                showHistory ? "bg-blue-500/20 text-blue-400" : "bg-zinc-800 text-zinc-500"
-              }`}
-            >
-              {history.length}
-            </span>
-          )}
-          {showHistory && (
-            <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-blue-500" />
-          )}
-        </button>
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveDragId(null);
+    if (!over || active.id === over.id) return;
+
+    const currentOrder = displayQueue.map((item) => item.id);
+    const oldIndex = currentOrder.indexOf(String(active.id));
+    const newIndex = currentOrder.indexOf(String(over.id));
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(currentOrder, oldIndex, newIndex);
+      setLocalQueueOrder(newOrder);
+    }
+  };
+
+  const activeItem = activeDragId
+    ? queue.find((i) => i.id === activeDragId)
+    : null;
+
+  return (
+    <div className="flex h-full flex-col  border-l border-zinc-800/80 backdrop-blur-2xl overflow-hidden select-none">
+      {/* ── Header: Tab switcher ────────────────────────── */}
+      <div className="flex items-center justify-between border-b border-zinc-800/80 p-3 pb-2.5">
+        <div className="flex rounded-lg bg-white/[0.04] p-0.5 ring-1 ring-white/[0.05]">
+          <button
+            type="button"
+            onClick={() => setShowHistory(false)}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              !showHistory
+                ? "bg-white/10 text-white shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <CloudDownload className="h-3.5 w-3.5" />
+            <span>Queue</span>
+            {queue.length > 0 && (
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-semibold leading-none ${
+                  !showHistory
+                    ? "bg-blue-500 text-white"
+                    : "bg-white/10 text-zinc-300"
+                }`}
+              >
+                {queue.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowHistory(true)}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              showHistory
+                ? "bg-white/10 text-white shadow-sm"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            <span>History</span>
+            {history.length > 0 && (
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-semibold leading-none ${
+                  showHistory
+                    ? "bg-blue-600/30 text-white"
+                    : "bg-white/10 text-zinc-300"
+                }`}
+              >
+                {history.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <span className="text-[11px] text-zinc-500 font-mono">
+          {showHistory ? `${history.length} done` : `${queue.length} tasks`}
+        </span>
       </div>
 
-      {/* ── Aggregate stats bar (active downloads only) ── */}
-      {!showHistory && hasActiveDownloads && (
-        <div className="flex items-center gap-2 border-b border-zinc-800/60 bg-blue-500/5 px-3 py-2">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20">
-            <Zap className="h-3 w-3 text-blue-400" />
-          </div>
-          <div className="flex-1 min-w-0">
+      {/* ── Active downloads summary strip ──────────────── */}
+      {!showHistory && activeItems.length > 0 && (
+        <div className="flex items-center justify-between border-b border-blue-500/10 bg-blue-500/5 px-3 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
             <span className="text-[11px] font-medium text-blue-300">
               {activeItems.length} downloading
               {pendingCount > 0 && (
@@ -254,39 +290,53 @@ export function DownloadQueue({
 
       {/* ── "Reveal All" batch bar (history with 2+ completed) ── */}
       {showRevealAll && (
-        <div className="flex items-center justify-between border-b border-zinc-800/60 bg-zinc-900/50 px-3 py-1.5">
+        <div className="flex items-center justify-between border-b border-white/[0.04] bg-white/[0.01] px-3 py-1.5">
           <span className="text-[11px] text-zinc-500">
             {completedWithPath.length} downloads saved
           </span>
-          <button
-            type="button"
-            onClick={handleRevealAll}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
-          >
-            <FolderOpen className="h-3 w-3" />
-            Reveal All
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onCleanMissing && (
+              <button
+                type="button"
+                onClick={handleCleanMissing}
+                disabled={isCleaning}
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-amber-300 disabled:opacity-50"
+                title="Remove deleted files from download history"
+              >
+                <Sparkles className="h-3 w-3 text-amber-400" />
+                <span>Clean Missing</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleRevealAll}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              <FolderOpen className="h-3 w-3" />
+              <span>Reveal All</span>
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── Item list ──────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
         {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center px-4 py-12 text-center">
             {showHistory ? (
               <>
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/80">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.04] ring-1 ring-white/[0.06]">
                   <Clock className="h-6 w-6 text-zinc-600" />
                 </div>
-                <p className="text-sm font-medium text-zinc-500">No history yet</p>
+                <p className="text-sm font-medium text-zinc-400">No history yet</p>
                 <p className="mt-1 text-xs text-zinc-600">Completed downloads will appear here</p>
               </>
             ) : (
               <>
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-800/80">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.04] ring-1 ring-white/[0.06]">
                   <CloudDownload className="h-6 w-6 text-zinc-600" />
                 </div>
-                <p className="text-sm font-medium text-zinc-500">No downloads yet</p>
+                <p className="text-sm font-medium text-zinc-400">No downloads yet</p>
                 <p className="mt-1 text-xs text-zinc-600">Paste a URL above to get started</p>
               </>
             )}
@@ -303,6 +353,7 @@ export function DownloadQueue({
               onRetry={onRetry}
               onOpen={onOpen}
               onOpenFolder={onOpenFolder}
+              onEdit={onEdit}
               onTranscribe={onTranscribe}
             />
           ))
@@ -328,12 +379,12 @@ export function DownloadQueue({
                   onRetry={onRetry}
                   onOpen={onOpen}
                   onOpenFolder={onOpenFolder}
+                  onEdit={onEdit}
                   onTranscribe={onTranscribe}
                 />
               ))}
             </SortableContext>
 
-            {/* Drag overlay — shows the card floating while dragging */}
             <DragOverlay>
               {activeItem ? (
                 <SortableQueueItem
@@ -345,6 +396,7 @@ export function DownloadQueue({
                   onRetry={onRetry}
                   onOpen={onOpen}
                   onOpenFolder={onOpenFolder}
+                  onEdit={onEdit}
                   onTranscribe={onTranscribe}
                 />
               ) : null}
@@ -355,11 +407,11 @@ export function DownloadQueue({
 
       {/* ── Footer: clear button ───────────────────────── */}
       {!isEmpty && (
-        <div className="border-t border-zinc-800/80 p-2">
+        <div className="border-t border-white/[0.06] p-2 bg-white/[0.01]">
           <button
             type="button"
             onClick={showHistory ? onClearHistory : onClearQueue}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
           >
             <Trash2 className="h-3.5 w-3.5" />
             {showHistory ? "Clear History" : "Clear Queue"}

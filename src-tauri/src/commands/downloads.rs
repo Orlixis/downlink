@@ -1,7 +1,7 @@
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
-use super::types::{AddUrlsOptions, AddUrlsResult, QueueItem};
+use super::types::{AddUrlsOptions, AddUrlsResult, QueueItem, UpdateDownloadTaskOptions};
 use crate::db::SourceKind;
 use crate::url_utils;
 use crate::{get_or_init_download_manager, AppState};
@@ -251,4 +251,29 @@ pub async fn remove_download(state: State<'_, AppState>, id: Uuid) -> Result<(),
     db.delete_download(id)
         .map_err(|e| format!("Failed to remove download: {e}"))?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn update_download_task(
+    state: State<'_, AppState>,
+    options: UpdateDownloadTaskOptions,
+) -> Result<(), String> {
+    let mut db = state.db.lock().await;
+    db.update_download_task(
+        options.id,
+        &options.source_url,
+        options.title.as_deref(),
+        &options.output_dir,
+        options.referer_url.as_deref(),
+        &options.preset_id,
+    )
+    .map_err(|e| format!("Failed to update download task: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clean_missing_downloads(state: State<'_, AppState>) -> Result<Vec<Uuid>, String> {
+    let mut db = state.db.lock().await;
+    db.clean_missing_downloads()
+        .map_err(|e| format!("Failed to clean missing downloads: {e}"))
 }

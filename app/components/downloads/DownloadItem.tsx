@@ -17,6 +17,7 @@ import { DownloadItemActions } from "./DownloadItemActions";
 import { DownloadItemProgress } from "./DownloadItemProgress";
 import { DownloadItemDiagnostics } from "./DownloadItemDiagnostics";
 import { DownloadItemTranscribe } from "./DownloadItemTranscribe";
+import { DownloadItemContextMenu } from "./DownloadItemContextMenu";
 
 export type { WhisperModel };
 
@@ -26,8 +27,9 @@ interface DownloadItemProps {
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
-  onOpen: (path: string) => void;
-  onOpenFolder: (path: string) => void;
+  onOpen: (path: string, id?: string) => void;
+  onOpenFolder: (path: string, id?: string) => void;
+  onEdit?: (item: QueueItem) => void;
   onTranscribe?: (
     filePath: string,
     model: WhisperModel
@@ -139,9 +141,11 @@ export function DownloadItem({
   onRetry,
   onOpen,
   onOpenFolder,
+  onEdit,
   onTranscribe,
 }: DownloadItemProps) {
   const [errorExpanded, setErrorExpanded] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const isActive =
     item.status === "downloading" ||
@@ -160,7 +164,7 @@ export function DownloadItem({
         e.preventDefault();
         if (isActive) onStop(item.id);
         else if (isStopped || isQueued || isFailed) onRetry(item.id);
-        else if (isDone && item.final_path) onOpen(item.final_path);
+        else if (isDone && item.final_path) onOpen(item.final_path, item.id);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         if (isActive || isQueued) onCancel(item.id);
@@ -172,14 +176,19 @@ export function DownloadItem({
 
   return (
     <div
+      id={`download-item-${item.id}`}
       role="listitem"
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
       aria-label={`${item.title || item.source_url} — ${item.status}`}
-      className="rounded-xl bg-zinc-800/50 p-2.5 ring-1 ring-white/5 transition-colors hover:bg-zinc-800/80 animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
+      className="rounded-xl bg-white/[0.03] p-2.5 ring-1 ring-white/[0.06] transition-all duration-200 hover:bg-white/[0.06] hover:ring-white/[0.12] animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
     >
       <div className="flex items-start gap-2.5">
-        <div className="relative h-12 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-700/60">
+        <div className="relative h-12 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-white/[0.04] ring-1 ring-white/[0.06]">
           {item.thumbnail_url ? (
             <Image
               src={item.thumbnail_url}
@@ -198,8 +207,8 @@ export function DownloadItem({
           )}
 
           {isDone && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500/90 shadow-sm">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/90 shadow-sm ring-1 ring-white/20">
                 <Check className="h-3.5 w-3.5 text-white" />
               </div>
             </div>
@@ -244,6 +253,7 @@ export function DownloadItem({
               onOpenFolder={onOpenFolder}
               onCancel={onCancel}
               onRemove={onRemove}
+              onEdit={onEdit}
             />
           </div>
 
@@ -298,6 +308,22 @@ export function DownloadItem({
           finalPath={item.final_path}
           onOpen={onOpen}
           onTranscribe={onTranscribe}
+        />
+      )}
+
+      {contextMenu && (
+        <DownloadItemContextMenu
+          item={item}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onStart={onRetry}
+          onStop={onStop}
+          onEdit={onEdit}
+          onOpen={onOpen}
+          onOpenFolder={onOpenFolder}
+          onToggleDiagnostics={() => setErrorExpanded((v) => !v)}
+          onDelete={isActive || isQueued ? onCancel : onRemove}
         />
       )}
     </div>

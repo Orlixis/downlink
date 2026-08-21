@@ -6,9 +6,9 @@ pub mod tools;
 pub mod types;
 
 pub use self::downloads::{
-    add_urls, cancel_download, clear_history, clear_queue, get_history, get_queue,
-    remove_download, retry_download, start_all_downloads, start_download, stop_all_downloads,
-    stop_download,
+    add_urls, cancel_download, clean_missing_downloads, clear_history, clear_queue, get_history,
+    get_queue, remove_download, retry_download, start_all_downloads, start_download,
+    stop_all_downloads, stop_download, update_download_task,
 };
 pub use self::metadata::{
     expand_playlist, fast_fetch_metadata, fetch_metadata, preview_playlist, proxy_oembed_request,

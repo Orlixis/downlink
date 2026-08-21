@@ -353,6 +353,8 @@ pub fn run() {
             commands::downloads::clear_queue,
             commands::downloads::clear_history,
             commands::downloads::remove_download,
+            commands::downloads::update_download_task,
+            commands::downloads::clean_missing_downloads,
             // Settings
             commands::settings::get_settings,
             commands::settings::save_settings,

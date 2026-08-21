@@ -327,34 +327,39 @@ impl Db {
         Ok(ids)
     }
 
-    /// Clear all queued downloads (not started yet).
-    pub fn clear_queued_downloads(&mut self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM downloads WHERE status = 'queued'", [])?;
-        Ok(())
-    }
-
-    /// Clear all completed downloads from history.
-    pub fn clear_completed_downloads(&mut self) -> Result<()> {
+    /// Update an existing download task's configurable fields (URL, title/rename, output_dir, referer, preset).
+    pub fn update_download_task(
+        &mut self,
+        id: Uuid,
+        source_url: &str,
+        title: Option<&str>,
+        output_dir: &str,
+        referer_url: Option<&str>,
+        preset_id: &str,
+    ) -> Result<()> {
+        let now = Utc::now();
         self.conn.execute(
-            "DELETE FROM downloads WHERE status IN ('done', 'canceled', 'failed')",
-            [],
+            r#"
+            UPDATE downloads
+            SET updated_at = ?2,
+                source_url = ?3,
+                title = COALESCE(?4, title),
+                output_dir = ?5,
+                referer_url = ?6,
+                preset_id = ?7
+            WHERE id = ?1
+            "#,
+            params![
+                id.to_string(),
+                now.to_rfc3339(),
+                source_url,
+                title,
+                output_dir,
+                referer_url,
+                preset_id
+            ],
         )?;
         Ok(())
-    }
-
-    /// Reset orphaned "active" downloads to Stopped.
-    pub fn reset_orphaned_downloads(&mut self) -> Result<usize> {
-        let count = self.conn.execute(
-            "UPDATE downloads
-             SET status = 'stopped', phase = 'Interrupted — tap ▶ to resume'
-             WHERE status IN ('downloading', 'fetching', 'postprocessing')",
-            [],
-        )?;
-        if count > 0 {
-            log::info!("Reset {} orphaned download(s) to Stopped on startup", count);
-        }
-        Ok(count)
     }
 
     /// Get downloads by parent ID (for playlist items).

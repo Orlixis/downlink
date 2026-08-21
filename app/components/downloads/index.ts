@@ -3,3 +3,5 @@ export { DownloadItemActions } from "./DownloadItemActions";
 export { DownloadItemProgress } from "./DownloadItemProgress";
 export { DownloadItemDiagnostics } from "./DownloadItemDiagnostics";
 export { DownloadItemTranscribe } from "./DownloadItemTranscribe";
+export { DownloadItemContextMenu } from "./DownloadItemContextMenu";
+export { EditTaskModal } from "./EditTaskModal";

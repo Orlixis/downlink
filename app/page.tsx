@@ -18,9 +18,10 @@ import { UpdateModal } from "./components/UpdateModal";
 import { TrimModal } from "./components/TrimModal";
 import { BlackHoleOverlay } from "./components/BlackHoleOverlay";
 import { ClipboardBanner } from "./components/ClipboardBanner";
+import { EditTaskModal } from "./components/downloads";
 import { toast } from "./components/Toast";
 import { PRESETS, DEFAULT_PRESET_ID } from "./constants";
-import type { UserSettings } from "./types";
+import type { QueueItem, UserSettings } from "./types";
 
 export default function Home() {
   const downlink = useDownlink();
@@ -38,6 +39,7 @@ export default function Home() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [editingTaskItem, setEditingTaskItem] = useState<QueueItem | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -378,6 +380,8 @@ export default function Home() {
             onRetry={downlink.retryDownload}
             onOpen={downlink.openFile}
             onOpenFolder={downlink.openFolder}
+            onEdit={setEditingTaskItem}
+            onCleanMissing={downlink.cleanMissingDownloads}
             onClearQueue={downlink.clearQueue}
             onClearHistory={downlink.clearHistory}
             onTranscribe={downlink.transcribeFile}
@@ -410,6 +414,20 @@ export default function Home() {
         restartApp={downlink.restartApp}
         initialTab={settingsInitialTab as Parameters<typeof SettingsModal>[0]["initialTab"]}
       />
+
+      {editingTaskItem && (
+        <EditTaskModal
+          isOpen={!!editingTaskItem}
+          item={editingTaskItem}
+          onClose={() => setEditingTaskItem(null)}
+          onSave={async (opts) => {
+            await downlink.updateDownloadTask(opts);
+            if (opts.startImmediately) {
+              downlink.retryDownload(opts.id);
+            }
+          }}
+        />
+      )}
 
       <UpdateModal
         isOpen={isUpdateModalOpen}

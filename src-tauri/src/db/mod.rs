@@ -1,3 +1,4 @@
+pub mod cleanup;
 pub mod downloads;
 pub mod logs;
 pub mod migrations;

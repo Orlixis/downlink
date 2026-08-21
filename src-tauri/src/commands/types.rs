@@ -136,3 +136,15 @@ pub struct WhisperModelInfo {
     pub is_downloaded: bool,
     pub description: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDownloadTaskOptions {
+    pub id: Uuid,
+    pub source_url: String,
+    #[serde(default, deserialize_with = "deserialize_null_as_none")]
+    pub title: Option<String>,
+    pub output_dir: String,
+    #[serde(default, deserialize_with = "deserialize_null_as_none")]
+    pub referer_url: Option<String>,
+    pub preset_id: String,
+}
