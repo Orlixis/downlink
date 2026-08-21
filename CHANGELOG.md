@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.45](https://github.com/Orlixis/downlink/compare/v0.1.44...v0.1.45) (2026-08-21)
+
+
+### Features
+
+* add download task editing and automatic orphaned/missing file cleanup utility ([12533fc](https://github.com/Orlixis/downlink/commit/12533fc30c1b99aa86df8ab9438bde28a2038d0c))
+
 ### [0.1.44](https://github.com/Orlixis/downlink/compare/v0.1.43...v0.1.44) (2026-08-21)
 
 
