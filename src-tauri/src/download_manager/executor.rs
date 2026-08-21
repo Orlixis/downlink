@@ -76,12 +76,17 @@ pub async fn execute_download(
     let preset_id = clean_preset.as_str();
 
     let preset = if let Some(fmt) = preset_id.strip_prefix("custom:") {
+        let final_fmt = if fmt == "bestaudio" || fmt.contains('+') || fmt.contains("audio") || fmt.contains("/b") {
+            fmt.to_string()
+        } else {
+            format!("{}+ba/best", fmt)
+        };
         Preset {
             id: preset_id.to_string(),
             name: "Custom Quality".to_string(),
             yt_dlp_args: vec![
                 "-f".to_string(),
-                fmt.to_string(),
+                final_fmt,
                 "--merge-output-format".to_string(),
                 "mp4".to_string(),
             ],

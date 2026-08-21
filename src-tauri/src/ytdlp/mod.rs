@@ -174,6 +174,7 @@ impl YtDlpRunner {
                         if let Some(first) = json_lines.into_iter().next() {
                             if let Ok(mut meta) = parse_preview_metadata(&first, &iframe_url) {
                                 meta.url = url.to_string();
+                                meta.stream_url = Some(iframe_url.clone());
                                 return Ok(meta);
                             }
                         }
@@ -217,6 +218,7 @@ impl YtDlpRunner {
                             if let Some(first) = json_lines.into_iter().next() {
                                 if let Ok(mut meta) = parse_preview_metadata(&first, &sniffed_url) {
                                     meta.url = url.to_string();
+                                    meta.stream_url = Some(sniffed_url.clone());
                                     return Ok(meta);
                                 }
                             }

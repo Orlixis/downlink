@@ -8,17 +8,57 @@ pub async fn fallback_iframe_sniffer(url: &str) -> Option<String> {
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(6))
         .build()
         .ok()?;
 
     let text = client.get(url).send().await.ok()?.text().await.ok()?;
 
-    let re = regex::Regex::new(r#"(?i)https?://(?:www\.)?(?:ok\.ru|vidmoly|streamtape|dood|filemoon|mp4upload|vidsrc|megacloud|rabbitstream|streamwish|vidhide|sibnet|bilibili|iqiyi|youku)[^"'\s<>]+"#).ok()?;
+    // 1. Check for Dailymotion embed / geo player / data-video attribute
+    if let Some(caps) = regex::Regex::new(r#"(?:geo\.dailymotion\.com/player/[^"'\s<>]+\?video=|(?:www\.)?dailymotion\.com/(?:embed/)?video/|data-video=["'])([a-zA-Z0-9]+)"#).ok()?.captures(&text) {
+        if let Some(video_id) = caps.get(1) {
+            let id_str = video_id.as_str();
+            if id_str.len() >= 4 {
+                log::info!("fallback_iframe_sniffer: Found Dailymotion video ID {}", id_str);
+                return Some(format!("https://www.dailymotion.com/video/{}", id_str));
+            }
+        }
+    }
+
+    // 2. Check for schema.org / OpenGraph meta tags
+    let meta_re = regex::Regex::new(r#"(?:itemprop=["'](?:embedUrl|contentUrl)["']|property=["'](?:og:video|og:video:url)["']|name=["']twitter:player["'])[^>]*content=["']([^"']+)["']"#).ok()?;
+    if let Some(caps) = meta_re.captures(&text) {
+        if let Some(m) = caps.get(1) {
+            let u = m.as_str();
+            if u.contains("dailymotion.com") {
+                if let Some(id_caps) = regex::Regex::new(r#"(?:video=|video/)([a-zA-Z0-9]+)"#).ok()?.captures(u) {
+                    if let Some(id) = id_caps.get(1) {
+                        return Some(format!("https://www.dailymotion.com/video/{}", id.as_str()));
+                    }
+                }
+            }
+            if u.starts_with("http") {
+                log::info!("fallback_iframe_sniffer: Found meta embed URL {}", u);
+                return Some(u.to_string());
+            }
+        }
+    }
+
+    // 3. Check for standard iframe / video provider links
+    let re = regex::Regex::new(r#"(?i)https?://(?:www\.)?(?:ok\.ru|vidmoly|streamtape|dood|filemoon|mp4upload|vidsrc|megacloud|rabbitstream|streamwish|vidhide|sibnet|bilibili|iqiyi|youku|dailymotion|vimeo|rumble|bitchute|streamable)[^"'\s<>]+"#).ok()?;
 
     if let Some(captures) = re.captures(&text) {
         if let Some(m) = captures.get(0) {
-            return Some(m.as_str().to_string());
+            let u = m.as_str();
+            if u.contains("geo.dailymotion.com") || u.contains("dailymotion.com") {
+                if let Some(id_caps) = regex::Regex::new(r#"(?:video=|video/)([a-zA-Z0-9]+)"#).ok()?.captures(u) {
+                    if let Some(id) = id_caps.get(1) {
+                        return Some(format!("https://www.dailymotion.com/video/{}", id.as_str()));
+                    }
+                }
+            }
+            log::info!("fallback_iframe_sniffer: Found provider URL {}", u);
+            return Some(u.to_string());
         }
     }
     None

@@ -106,18 +106,19 @@ pub fn parse_preview_metadata(json_line: &str, fallback_url: &str) -> Result<Pre
         .unwrap_or(fallback_url)
         .to_string();
 
-    let stream_url = v
-        .get("url")
-        .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| {
-            v.get("requested_formats")
-                .and_then(|x| x.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|f| f.get("url"))
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
-        });
+    let is_direct_stream = fallback_url.contains(".m3u8")
+        || fallback_url.contains(".mpd")
+        || fallback_url.contains(".mp4")
+        || fallback_url.contains(".ts");
+
+    let stream_url = if is_direct_stream {
+        v.get("url")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| Some(fallback_url.to_string()))
+    } else {
+        None
+    };
 
     let title = v
         .get("title")
