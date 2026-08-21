@@ -11,10 +11,10 @@ interface OrbitingUrl {
 }
 
 interface UseDropOrbitOptions {
-  onUrlsDropped: (urls: string[]) => void;
+  onUrlsDropped?: (urls: string[]) => void;
 }
 
-export function useDropOrbit({ onUrlsDropped }: UseDropOrbitOptions) {
+export function useDropOrbit({ onUrlsDropped }: UseDropOrbitOptions = {}) {
   const [isDragging, setIsDragging] = useState(false);
   const [orbitingUrls, setOrbitingUrls] = useState<OrbitingUrl[]>([]);
   const dragCounterRef = useRef(0);
@@ -57,18 +57,31 @@ export function useDropOrbit({ onUrlsDropped }: UseDropOrbitOptions) {
         const dropY = e.clientY;
 
         const newOrbiters = matches.map((url, idx) => ({
-          id: `${Date.now()}-${idx}`,
+          id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
           url,
           startX: dropX + (Math.random() * 60 - 30),
           startY: dropY + (Math.random() * 60 - 30),
         }));
 
-        setOrbitingUrls(newOrbiters);
-        onUrlsDropped(matches);
+        setOrbitingUrls((prev) => [...prev, ...newOrbiters]);
       }
     },
-    [onUrlsDropped]
+    []
   );
+
+  const addOrbitingUrls = useCallback((urls: string[], startX: number, startY: number) => {
+    const newOrbiters = urls.map((url, idx) => ({
+      id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+      url,
+      startX: startX + (Math.random() * 40 - 20),
+      startY: startY + (Math.random() * 40 - 20),
+    }));
+    setOrbitingUrls((prev) => [...prev, ...newOrbiters]);
+  }, []);
+
+  const removeOrbitingUrl = useCallback((url: string) => {
+    setOrbitingUrls((prev) => prev.filter((item) => item.url !== url));
+  }, []);
 
   const clearOrbitingUrls = useCallback(() => {
     setOrbitingUrls([]);
@@ -81,6 +94,8 @@ export function useDropOrbit({ onUrlsDropped }: UseDropOrbitOptions) {
     handleDragLeave,
     handleDragOver,
     handleDrop,
+    addOrbitingUrls,
+    removeOrbitingUrl,
     clearOrbitingUrls,
   };
 }

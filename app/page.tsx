@@ -76,12 +76,10 @@ export default function Home() {
     handleDragLeave,
     handleDragOver,
     handleDrop,
+    addOrbitingUrls,
+    removeOrbitingUrl,
     clearOrbitingUrls,
-  } = useDropOrbit({
-    onUrlsDropped: (urls) => {
-      setUrlInput((prev) => (prev ? `${prev.trim()}\n${urls.join("\n")}` : urls.join("\n")));
-    },
-  });
+  } = useDropOrbit();
 
   const playlist = usePlaylistDialog({
     previewPlaylist: downlink.previewPlaylist,
@@ -252,15 +250,31 @@ export default function Home() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {isDragging && (
+      {(isDragging || (clipboardUrl && !urlInput.trim()) || orbitingUrls.length > 0) && (
         <BlackHoleOverlay
-          mode="drag"
+          mode={isDragging ? "drag" : "clipboard"}
+          clipboardUrl={clipboardUrl}
           orbitingUrls={orbitingUrls}
           onDropPackage={(x, y, urls) => {
-            clearOrbitingUrls();
-            urls.forEach((u) => setUrlInput((prev) => (prev ? `${prev.trim()}\n${u}` : u)));
+            addOrbitingUrls(urls, x, y);
+            if (clipboardUrl) dismissClipboardUrl(clipboardUrl);
           }}
-          onDismiss={() => {}}
+          onAbsorb={(url) => {
+            const absorbed = url || clipboardUrl;
+            if (absorbed) {
+              setUrlInput((prev) => {
+                if (!prev) return absorbed;
+                if (prev.includes(absorbed)) return prev;
+                return `${prev.trim()}\n${absorbed}`;
+              });
+              dismissClipboardUrl(absorbed);
+              removeOrbitingUrl(absorbed);
+            }
+            inputRef.current?.focus();
+          }}
+          onDismiss={() => {
+            if (clipboardUrl) dismissClipboardUrl(clipboardUrl);
+          }}
         />
       )}
 
@@ -279,22 +293,6 @@ export default function Home() {
         updateState={downlink.updateAvailable}
         onUpdateClick={() => setIsUpdateModalOpen(true)}
       />
-
-      {clipboardUrl && !urlInput.trim() && (
-        <BlackHoleOverlay
-          mode="clipboard"
-          clipboardUrl={clipboardUrl}
-          onAbsorb={(url) => {
-            const absorbed = url || clipboardUrl;
-            setUrlInput(absorbed);
-            dismissClipboardUrl(absorbed);
-            inputRef.current?.focus();
-          }}
-          onDismiss={() => {
-            dismissClipboardUrl(clipboardUrl);
-          }}
-        />
-      )}
 
       <div className={`flex flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-hidden"}`}>
         <div className="flex-1 flex flex-col border-r border-zinc-800">

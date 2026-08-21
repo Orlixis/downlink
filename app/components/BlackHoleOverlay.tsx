@@ -41,6 +41,8 @@ export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDrop
     if (isActive && !absorbedRef.current) {
       soundManager.startPortalIdle();
       
+      gsap.killTweensOf([overlayRef.current, coreRef.current, canvasRef.current, urlPillRef.current]);
+      
       const tl = gsap.timeline({ overwrite: "auto" });
       
       // Fade in the background overlay
@@ -50,71 +52,88 @@ export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDrop
       tl.to(coreRef.current, { scale: 1, opacity: 1, duration: 0.6, ease: "back.out(2)" }, 0);
       
       // Fade in the 3D physics canvas
-      tl.to(canvasRef.current, { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1);
+      tl.to(canvasRef.current, { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.05);
+
+      if (urlPillRef.current && mode === "clipboard" && clipboardUrl) {
+        tl.to(urlPillRef.current, { opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1);
+      }
     } else if (!isActive && !absorbedRef.current) {
       soundManager.stopPortalIdle();
+      
+      gsap.killTweensOf([overlayRef.current, coreRef.current, canvasRef.current, urlPillRef.current]);
       
       const tl = gsap.timeline({ overwrite: "auto" });
       
       // Shrink and vanish the core
-      tl.to(coreRef.current, { scale: 0.2, opacity: 0, duration: 0.4, ease: "back.in(1.5)" }, 0);
+      tl.to(coreRef.current, { scale: 0.2, opacity: 0, duration: 0.35, ease: "back.in(1.5)" }, 0);
       
-      // Fade out the 3D physics canvas
-      tl.to(canvasRef.current, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0);
+      // Fade out the 3D physics canvas & url pill
+      tl.to(canvasRef.current, { opacity: 0, duration: 0.25, ease: "power2.in" }, 0);
+      if (urlPillRef.current) {
+        tl.to(urlPillRef.current, { opacity: 0, duration: 0.2, ease: "power2.in" }, 0);
+      }
       
       // Keep the overlay background visible slightly longer so the shrink animation is visible
-      tl.to(overlayRef.current, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0.2);
+      tl.to(overlayRef.current, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0.1);
     }
 
     return () => {
       soundManager.stopPortalIdle();
     };
-  }, [isActive, mode]);
-
-  // Dedicated hook for the package pill visibility so it fades in when a new link is detected
-  useGSAP(() => {
-    if (isActive && mode === "clipboard" && clipboardUrl && urlPillRef.current) {
-      gsap.to(urlPillRef.current, { opacity: 1, duration: 0.5, delay: 0.1 });
-    } else if (urlPillRef.current) {
-      gsap.to(urlPillRef.current, { opacity: 0, duration: 0.3 });
-    }
   }, [isActive, mode, clipboardUrl]);
 
   useEffect(() => {
     const handleDeactivate = () => {
-      if (orbitingUrls.length === 0) setIsActive(false);
-    };
-    const handleActivate = () => {
-      if (document.visibilityState === "visible") setIsActive(true);
-    };
-
-    const handleMouseLeave = (e: MouseEvent) => {
-      if (orbitingUrls.length > 0) return;
-      // If the mouse leaves the document completely, deactivate
-      if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+      if (orbitingUrls.length === 0) {
         setIsActive(false);
       }
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden" && orbitingUrls.length === 0) setIsActive(false);
-      else setIsActive(true);
+    const handleActivate = () => {
+      if (document.visibilityState === "visible") {
+        absorbedRef.current = false;
+        setIsActive(true);
+      }
+    };
+
+    const handleMouseLeave = (e: MouseEvent | PointerEvent) => {
+      if (orbitingUrls.length > 0) return;
+      setIsActive(false);
+    };
+
+    const handleWindowMouseOut = (e: MouseEvent) => {
+      if (orbitingUrls.length > 0) return;
+      // If leaving window completely (relatedTarget is null)
+      if (!e.relatedTarget && !(e as any).toElement) {
+        setIsActive(false);
+      }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      // Check if within window bounds
+      const isInBounds =
+        e.clientX >= 8 &&
+        e.clientY >= 8 &&
+        e.clientX <= window.innerWidth - 8 &&
+        e.clientY <= window.innerHeight - 8;
+
+      if (!isInBounds) {
+        if (orbitingUrls.length === 0) setIsActive(false);
+        return;
+      }
+
       if (!isActive && !absorbedRef.current) {
+        absorbedRef.current = false;
         setIsActive(true);
         return;
       }
 
-      if (!isActive || !coreRef.current || absorbedRef.current) return;
+      if (!isActive || absorbedRef.current) return;
       
-      const rect = coreRef.current.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
       
       const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-      
       const maxDist = window.innerWidth * 0.7; 
       
       let volume = 1.0 - (dist / maxDist);
@@ -124,33 +143,31 @@ export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDrop
       soundManager.setPortalVolume(volume);
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    document.addEventListener("mouseleave", handleMouseLeave);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") handleDeactivate();
+      else handleActivate();
+    });
+    
+    document.documentElement.addEventListener("mouseleave", handleMouseLeave);
+    document.documentElement.addEventListener("pointerleave", handleMouseLeave);
+    window.addEventListener("mouseout", handleWindowMouseOut);
     window.addEventListener("blur", handleDeactivate);
     window.addEventListener("focus", handleActivate);
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      document.removeEventListener("mouseleave", handleMouseLeave);
+      document.documentElement.removeEventListener("mouseleave", handleMouseLeave);
+      document.documentElement.removeEventListener("pointerleave", handleMouseLeave);
+      window.removeEventListener("mouseout", handleWindowMouseOut);
       window.removeEventListener("blur", handleDeactivate);
       window.removeEventListener("focus", handleActivate);
       window.removeEventListener("mousemove", handleMouseMove);
     };
   }, [isActive, orbitingUrls.length]);
 
-  // (Entrance animation is now handled in the isActive useGSAP block)
-
-  // ── Continuous black hole physics ───────────────────────────────────────
-  useGSAP(() => {
-    // The physics simulation handles most of the movement,
-    // but the URL pill still bobs toward core using GSAP.
-
-    // The URL pill bob is removed because useGravityCursor controls its transform.
-  }, [mode]);
-
   // ── Absorb: pill falls into singularity ────────────────────────────────
   const handleAbsorb = (url?: string) => {
+    absorbedRef.current = true;
     soundManager.playThrow(); // Play the blackhole sound
 
     // Core "gulp" animation
@@ -171,29 +188,18 @@ export function BlackHoleOverlay({ mode, clipboardUrl, orbitingUrls = [], onDrop
 
   // ── Click to Drop ────────────────────────────────────────────────────────
   const handleOverlayClick = (e: React.MouseEvent) => {
-    // Determine if clicked on the core
-    let clickedCore = false;
-    if (coreRef.current) {
-      const rect = coreRef.current.getBoundingClientRect();
-      const dist = Math.hypot(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2));
-      if (dist < 60) {
-        clickedCore = true;
-      }
-    }
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+    const clickedCore = dist < 60;
 
-    if (isDrag) {
-      // Drag mode: drop orbiting packages at cursor position
-      if (clipboardUrl && onDropPackage && !clickedCore) {
-        const urls = clipboardUrl.split(/\r?\n/).filter(line => line.trim().includes("http"));
-        onDropPackage(e.clientX, e.clientY, urls);
-      }
-    } else {
-      // Clipboard mode: click core = absorb, click outside = dismiss
-      if (clickedCore) {
-        handleAbsorb(clipboardUrl ?? undefined);
-      } else {
-        handleDismiss();
-      }
+    if (clipboardUrl && onDropPackage && !clickedCore) {
+      const urls = clipboardUrl.split(/\r?\n/).filter(line => line.trim().includes("http"));
+      onDropPackage(e.clientX, e.clientY, urls);
+    } else if (clipboardUrl && clickedCore) {
+      handleAbsorb(clipboardUrl ?? undefined);
+    } else if (!clickedCore && orbitingUrls.length === 0) {
+      handleDismiss();
     }
   };
 

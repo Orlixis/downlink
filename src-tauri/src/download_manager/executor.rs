@@ -242,7 +242,7 @@ pub async fn execute_download(
 
     loop {
         tokio::select! {
-            _ = cancel_rx.recv() => {
+            Ok(()) = cancel_rx.recv() => {
                 log::info!("Download {} received cancel signal", id);
                 let _ = child.kill().await;
                 return Err(DownloadError::Stopped);

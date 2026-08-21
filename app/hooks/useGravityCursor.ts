@@ -20,19 +20,34 @@ export function useGravityCursor(
   }, [isActive]);
 
   useEffect(() => {
+    const hasMovedRef = { current: false };
+
     const handleMouseMove = (e: MouseEvent) => {
       mousePos.current.x = e.clientX;
       mousePos.current.y = e.clientY;
+      hasMovedRef.current = true;
     };
     
     // Initialize starting position near mouse
     const initMouse = (e: MouseEvent) => {
       cursorObj.current.x = e.clientX;
       cursorObj.current.y = e.clientY;
+      mousePos.current.x = e.clientX;
+      mousePos.current.y = e.clientY;
+      hasMovedRef.current = true;
       window.removeEventListener('mousemove', initMouse);
     };
     window.addEventListener('mousemove', initMouse);
     window.addEventListener('mousemove', handleMouseMove);
+
+    let cx = window.innerWidth / 2;
+    let cy = window.innerHeight / 2;
+
+    const updateCenter = () => {
+      cx = window.innerWidth / 2;
+      cy = window.innerHeight / 2;
+    };
+    window.addEventListener("resize", updateCenter);
 
     let animationId: number;
 
@@ -41,10 +56,6 @@ export function useGravityCursor(
         animationId = requestAnimationFrame(animate);
         return;
       }
-
-      const rect = coreRef.current.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
 
       const p = cursorObj.current;
       const m = mousePos.current;
@@ -61,8 +72,8 @@ export function useGravityCursor(
       const dy = cy - p.y;
       const dist = Math.hypot(dx, dy);
 
-      // Event Horizon check
-      if (dist < 40 && !absorbedRef.current) {
+      // Event Horizon check - only if user has moved the mouse
+      if (hasMovedRef.current && dist < 35 && !absorbedRef.current) {
         absorbedRef.current = true;
         onAbsorbed();
       }
@@ -76,9 +87,8 @@ export function useGravityCursor(
       p.x += p.vx;
       p.y += p.vy;
 
-      const cRect = cursorRef.current.getBoundingClientRect();
-      const hw = cRect.width / 2;
-      const hh = cRect.height / 2;
+      const hw = 24;
+      const hh = 24;
 
       // Add a tiny bit of rotation just for a wobble effect, no stretching
       const wobble = p.vx * 0.5;
@@ -91,6 +101,7 @@ export function useGravityCursor(
     animate();
 
     return () => {
+      window.removeEventListener("resize", updateCenter);
       window.removeEventListener('mousemove', handleMouseMove);
       cancelAnimationFrame(animationId);
     };

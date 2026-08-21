@@ -6,11 +6,11 @@ import { formatBytes } from "@/app/types";
 
 export const GLOBAL_QUALITY_PRESETS = [
   { label: "Best", value: "default" },
-  { label: "4K", value: "bestvideo[height<=2160]+bestaudio/best[height<=2160]" },
-  { label: "1080p", value: "bestvideo[height<=1080]+bestaudio/best[height<=1080]" },
-  { label: "720p", value: "bestvideo[height<=720]+bestaudio/best[height<=720]" },
-  { label: "480p", value: "bestvideo[height<=480]+bestaudio/best[height<=480]" },
-  { label: "Audio", value: "bestaudio" },
+  { label: "4K", value: "bv*[height<=2160][ext=mp4]+ba[ext=m4a]/b[height<=2160][ext=mp4]/bv*[height<=2160]+ba/b[height<=2160]" },
+  { label: "1080p", value: "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bv*[height<=1080]+ba/b[height<=1080]" },
+  { label: "720p", value: "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bv*[height<=720]+ba/b[height<=720]" },
+  { label: "480p", value: "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/bv*[height<=480]+ba/b[height<=480]" },
+  { label: "Audio", value: "ba[ext=m4a]/ba" },
 ] as const;
 
 interface QualityPickerProps {
@@ -144,7 +144,7 @@ export function QualityPicker({
             type="button"
             onClick={() => onSelect(preset.value)}
             className={
-              preset.value === "bestaudio"
+              preset.label.toLowerCase().includes("audio")
                 ? audioPillCls(preset.value)
                 : videoPillCls(preset.value)
             }

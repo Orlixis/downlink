@@ -40,9 +40,46 @@ export function useClipboardWatcher({
   }, [isTauri, onUrlDetected]);
 
   useEffect(() => {
-    window.addEventListener("focus", checkClipboard);
-    return () => window.removeEventListener("focus", checkClipboard);
-  }, [checkClipboard]);
+    let tauriUnlisten: (() => void) | undefined;
+
+    const setup = async () => {
+      if (isTauri && typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const appWindow = getCurrentWindow();
+          const unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+            if (focused) {
+              setTimeout(checkClipboard, 150);
+            }
+          });
+          tauriUnlisten = unlisten;
+        } catch {
+          // Fallback to DOM events
+        }
+      }
+    };
+
+    setup();
+
+    const handleMouseEnter = () => setTimeout(checkClipboard, 80);
+    const handleFocus = () => setTimeout(checkClipboard, 150);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") setTimeout(checkClipboard, 150);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    document.documentElement.addEventListener("mouseenter", handleMouseEnter);
+    document.documentElement.addEventListener("pointerenter", handleMouseEnter);
+
+    return () => {
+      tauriUnlisten?.();
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      document.documentElement.removeEventListener("mouseenter", handleMouseEnter);
+      document.documentElement.removeEventListener("pointerenter", handleMouseEnter);
+    };
+  }, [checkClipboard, isTauri]);
 
   const dismiss = (url: string) => {
     dismissedUrlsRef.current.add(url);

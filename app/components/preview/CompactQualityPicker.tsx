@@ -94,7 +94,7 @@ export function CompactQualityPicker({
           key={preset.value}
           type="button"
           onClick={() => onSelect(preset.value)}
-          className={pillCls(preset.value, preset.value === "bestaudio")}
+          className={pillCls(preset.value, preset.label.toLowerCase().includes("audio"))}
         >
           {preset.label}
         </button>

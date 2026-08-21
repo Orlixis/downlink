@@ -140,6 +140,11 @@ impl DownloadManager {
     }
 
     pub async fn start(&self, id: Uuid) -> Result<()> {
+        if self.active_downloads.read().await.contains_key(&id) {
+            log::info!("Download {} is already active, ignoring start request", id);
+            return Ok(());
+        }
+
         let max_concurrent = self.config.read().await.max_concurrent;
         let active_count = self.active_downloads.read().await.len();
 
@@ -161,6 +166,8 @@ impl DownloadManager {
                 .get_download(id)
                 .map_err(|e| anyhow!("Failed to get download: {}", e))?
                 .ok_or_else(|| anyhow!("Download not found: {}", id))?;
+
+            let _ = db.set_status(id, DownloadStatus::Downloading, Some("Starting..."));
 
             DownloadItemInfo {
                 source_url: row.source_url,
