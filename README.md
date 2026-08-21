@@ -7,7 +7,7 @@ A lightweight, cross-platform desktop application for downloading online media u
 
 **[📥 Download Downlink](https://provleon.github.io/downlink/)** — Get the latest release for macOS, Windows, and Linux.
 
-![Downlink Screenshot](./docs/screenshot.png)
+![Downlink Screenshot](./docs/screenshot1.png)
 
 ## Features
 
@@ -118,10 +118,12 @@ If you prefer to build manually:
 #### macOS
 
 **Prerequisites:**
+
 - Xcode Command Line Tools: `xcode-select --install`
 - Rust with macOS targets
 
 **Download binaries first:**
+
 ```bash
 mkdir -p src-tauri/binaries
 cd src-tauri/binaries
@@ -141,22 +143,26 @@ rm ffmpeg.zip
 ```
 
 **Build:**
+
 ```bash
 npm run tauri:build
 ```
 
 **Output files:**
+
 - `src-tauri/target/release/bundle/macos/Downlink.app` - Application bundle
 - `src-tauri/target/release/bundle/dmg/Downlink_0.1.0_*.dmg` - Disk image
 
 #### Windows
 
 **Prerequisites:**
+
 - Visual Studio Build Tools with C++ workload
 - Rust with Windows target
 - WebView2 (usually pre-installed on Windows 10/11)
 
 **Download binaries first (PowerShell):**
+
 ```powershell
 New-Item -ItemType Directory -Path "src-tauri\binaries" -Force
 
@@ -175,17 +181,20 @@ Remove-Item -Path $TempDir -Recurse -Force
 ```
 
 **Build:**
+
 ```powershell
 npm run tauri:build
 ```
 
 **Output files:**
+
 - `src-tauri/target/release/bundle/nsis/Downlink_0.1.0_x64-setup.exe` - NSIS installer
 - `src-tauri/target/release/bundle/msi/Downlink_0.1.0_x64_en-US.msi` - MSI installer
 
 #### Linux
 
 **Prerequisites:**
+
 ```bash
 # Ubuntu/Debian
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
@@ -196,6 +205,7 @@ sudo dnf install webkit2gtk4.1-devel openssl-devel gtk3-devel librsvg2-devel
 ```
 
 **Download binaries first:**
+
 ```bash
 mkdir -p src-tauri/binaries
 cd src-tauri/binaries
@@ -213,11 +223,13 @@ rm -rf ffmpeg.tar.xz ffmpeg-*-static
 ```
 
 **Build:**
+
 ```bash
 npm run tauri:build
 ```
 
 **Output files:**
+
 - `src-tauri/target/release/bundle/deb/downlink_0.1.0_amd64.deb` - Debian package
 - `src-tauri/target/release/bundle/rpm/downlink-0.1.0-1.x86_64.rpm` - RPM package
 - `src-tauri/target/release/bundle/appimage/downlink_0.1.0_amd64.AppImage` - AppImage
@@ -232,6 +244,7 @@ git push origin v0.1.0
 ```
 
 This creates a draft release with binaries for:
+
 - macOS (ARM64 and x64)
 - Windows (x64)
 - Linux (x64)
@@ -273,51 +286,52 @@ downlink/
 ## Configuration
 
 Settings are stored in the app's data directory:
+
 - **macOS**: `~/Library/Application Support/Downlink/`
 - **Windows**: `%APPDATA%\Downlink\`
 - **Linux**: `~/.local/share/downlink/`
 
 ### Default Presets
 
-| Preset | Description |
-|--------|-------------|
+| Preset             | Description                                    |
+| ------------------ | ---------------------------------------------- |
 | Recommended (Best) | Best quality, merges video+audio automatically |
-| 1080p MP4 | Best quality up to 1080p in MP4 container |
-| Best MP4 | Best quality preferring MP4 format |
-| Audio M4A | Audio only in M4A format (fastest) |
-| Audio MP3 320 | Audio only in MP3 320kbps |
+| 1080p MP4          | Best quality up to 1080p in MP4 container      |
+| Best MP4           | Best quality preferring MP4 format             |
+| Audio M4A          | Audio only in M4A format (fastest)             |
+| Audio MP3 320      | Audio only in MP3 320kbps                      |
 
 ## Tauri Commands
 
 The frontend communicates with the backend via Tauri commands:
 
-| Command | Description |
-|---------|-------------|
-| `add_urls` | Add URLs to the download queue |
-| `fetch_metadata` | Fetch video/playlist metadata |
-| `expand_playlist` | Expand playlist into individual items |
-| `start_download` | Start a specific download |
-| `stop_download` | Stop (pause) a download |
-| `cancel_download` | Cancel and remove a download |
-| `retry_download` | Retry a failed download |
-| `get_queue` | Get all active queue items |
-| `get_history` | Get completed downloads |
-| `get_settings` | Get user settings |
-| `save_settings` | Save user settings |
+| Command                | Description                           |
+| ---------------------- | ------------------------------------- |
+| `add_urls`             | Add URLs to the download queue        |
+| `fetch_metadata`       | Fetch video/playlist metadata         |
+| `expand_playlist`      | Expand playlist into individual items |
+| `start_download`       | Start a specific download             |
+| `stop_download`        | Stop (pause) a download               |
+| `cancel_download`      | Cancel and remove a download          |
+| `retry_download`       | Retry a failed download               |
+| `get_queue`            | Get all active queue items            |
+| `get_history`          | Get completed downloads               |
+| `get_settings`         | Get user settings                     |
+| `save_settings`        | Save user settings                    |
 | `get_toolchain_status` | Get yt-dlp/ffmpeg versions and status |
 
 ## Events
 
 Backend → Frontend events for real-time updates:
 
-| Event | Description |
-|-------|-------------|
-| `AppReady` | App initialized with tool versions |
-| `DownloadStarted` | Download has started |
-| `DownloadProgress` | Progress update with percent, speed, ETA |
-| `DownloadCompleted` | Download finished successfully |
-| `DownloadFailed` | Download failed with error and remediation actions |
-| `PlaylistExpanded` | Playlist expanded into child items |
+| Event               | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| `AppReady`          | App initialized with tool versions                 |
+| `DownloadStarted`   | Download has started                               |
+| `DownloadProgress`  | Progress update with percent, speed, ETA           |
+| `DownloadCompleted` | Download finished successfully                     |
+| `DownloadFailed`    | Download failed with error and remediation actions |
+| `PlaylistExpanded`  | Playlist expanded into child items                 |
 
 ## Contributing
 
@@ -367,6 +381,7 @@ See [LICENSE](LICENSE) for the full license file.
 ## Roadmap
 
 ### v1.0
+
 - [x] Basic download functionality
 - [x] Queue management
 - [x] Playlist expansion
@@ -375,6 +390,7 @@ See [LICENSE](LICENSE) for the full license file.
 - [x] Subtitle support
 
 ### v1.1
+
 - [ ] Format matrix (advanced format selection)
 - [ ] Batch rules (per-channel/site presets)
 - [ ] Download scheduler
@@ -382,6 +398,7 @@ See [LICENSE](LICENSE) for the full license file.
 - [ ] Cookie import wizard
 
 ### Future
+
 - [ ] Auto-update for app and tools
 - [ ] Plugin system for custom presets
 - [ ] Cloud sync for settings
