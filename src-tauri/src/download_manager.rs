@@ -1038,6 +1038,12 @@ async fn execute_download(
         format!("{}/{}", output_dir, config_guard.default_output_template)
     };
 
+    // Ensure hidden staging temp directory exists for fragments
+    let temp_staging_dir = crate::db::app_data_dir()
+        .map(|d| d.join("tmp"))
+        .unwrap_or_else(|_| PathBuf::from(output_dir));
+    let _ = tokio::fs::create_dir_all(&temp_staging_dir).await;
+
     // Build yt-dlp command
     let mut args = vec![
         "--newline".to_string(),
@@ -1046,6 +1052,9 @@ async fn execute_download(
         "--progress".to_string(),
         "--progress-template".to_string(),
         "download:[downlink] %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s %(progress._total_bytes_str)s".to_string(),
+        // Direct all temporary chunk/fragment files to the hidden app tmp folder so the user's Downloads folder stays completely clean!
+        "--paths".to_string(),
+        format!("temp:{}", temp_staging_dir.display()),
         "-o".to_string(),
         output_template,
         // Enforce safe filename length limits across APFS/NTFS/ext4 filesystems (prevents [Errno 63/36] File name too long)
@@ -1259,19 +1268,20 @@ async fn execute_download(
 
                         // Send progress event if we parsed something
                         if let Some(mut p) = parsed {
-                            // Detect if yt-dlp started downloading a second stream (e.g. audio after video)
                             let current_raw_percent = p.percent.unwrap_or(0.0);
                             
-                            if current_raw_percent < last_raw_percent - 50.0 {
+                            // Detect if a secondary stream started (e.g. separate audio track after video track on YouTube)
+                            if last_raw_percent >= 70.0 && current_raw_percent <= 30.0 {
                                 streams_completed += 1;
                             }
                             last_raw_percent = current_raw_percent;
                             
-                            // Map progress assuming 2 streams total (Video -> 0-50%, Audio -> 50-100%)
+                            // For single-stream downloads (HLS m3u8, direct MP4, Twitch, etc.), display 100% of raw progress.
+                            // If a secondary audio stream begins, smoothly map it into the final 90-100% stretch.
                             let adjusted_percent = if streams_completed == 0 {
-                                current_raw_percent / 2.0
+                                current_raw_percent
                             } else {
-                                50.0 + (current_raw_percent / 2.0).min(50.0)
+                                90.0 + (current_raw_percent * 0.1).min(10.0)
                             };
                             
                             p.percent = Some(adjusted_percent);
@@ -1279,7 +1289,7 @@ async fn execute_download(
                             // Only send if percent changed significantly (avoid flooding)
                             if (adjusted_percent - reported_percent).abs() >= 0.5 || adjusted_percent >= 99.9 {
                                 reported_percent = adjusted_percent;
-                                log::info!("Progress: {}% (Raw: {}%)", adjusted_percent, current_raw_percent);
+                                log::info!("Progress: {:.1}% (Raw: {:.1}%)", adjusted_percent, current_raw_percent);
                                 let _ = event_tx.send(DownlinkEvent::DownloadProgress {
                                     id,
                                     status: events::DownloadStatus::Downloading,
