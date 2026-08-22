@@ -1,5 +1,6 @@
 pub mod continuity;
 pub mod downloads;
+pub mod extensions;
 pub mod metadata;
 pub mod settings;
 pub mod system;
@@ -12,6 +13,10 @@ pub use self::downloads::{
     get_queue, remove_download, retry_download, start_all_downloads, start_download,
     stop_all_downloads, stop_download, update_download_task,
 };
+pub use self::extensions::{
+    detect_installed_browsers, get_extension_folder_path, launch_browser_extension_installer,
+    DetectedBrowser,
+};
 pub use self::metadata::{
     expand_playlist, fast_fetch_metadata, fetch_metadata, preview_playlist, proxy_oembed_request,
 };
@@ -20,12 +25,11 @@ pub use self::settings::{
     save_window_state,
 };
 pub use self::system::{
-    check_app_update, detect_installed_browsers, extract_urls_from_text, get_app_data_dir,
-    get_app_version, get_extension_folder_path, install_app_update,
-    launch_browser_extension_installer, open_file, open_folder, restart_app, set_window_title,
-    DetectedBrowser,
+    check_app_update, extract_urls_from_text, get_app_data_dir, get_app_version,
+    install_app_update, open_file, open_folder, open_url, restart_app, set_window_title,
 };
 pub use self::tools::{
     check_for_updates, check_whisper, get_toolchain_status, transcribe_file, update_tool,
 };
 pub use self::types::*;
+

@@ -386,9 +386,10 @@ pub fn run() {
             commands::system::open_file,
             commands::system::open_folder,
             commands::system::open_url,
-            commands::system::get_extension_folder_path,
-            commands::system::detect_installed_browsers,
-            commands::system::launch_browser_extension_installer,
+            // Extensions & Browser Integration
+            commands::extensions::get_extension_folder_path,
+            commands::extensions::detect_installed_browsers,
+            commands::extensions::launch_browser_extension_installer,
             // App updates
             commands::system::check_app_update,
             commands::system::install_app_update,

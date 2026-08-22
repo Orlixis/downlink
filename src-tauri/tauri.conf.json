@@ -57,6 +57,9 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "resources": [
+      "../extensions/**/*"
+    ],
     "externalBin": [
       "binaries/yt-dlp",
       "binaries/ffmpeg"
