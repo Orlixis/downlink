@@ -163,36 +163,113 @@ jobs:
           chmod +x "src-tauri/binaries/yt-dlp-${{ matrix.binary_suffix }}"
 
       # Download ffmpeg
+      # Download ffmpeg
       - name: Download ffmpeg (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
-          curl -L -o ffmpeg.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
-          unzip -o ffmpeg.zip
-          mv ffmpeg "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
-          chmod +x "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
-          rm ffmpeg.zip
+          URLS=(
+            "https://evermeet.cx/ffmpeg/getrelease/zip"
+            "https://github.com/eugeneware/ffmpeg-static/releases/download/b7.1/darwin-x64"
+          )
+          DOWNLOADED=0
+          for url in "${URLS[@]}"; do
+            echo "Attempting macOS ffmpeg download from $url..."
+            if [[ "$url" == *".zip" ]]; then
+              if curl -fL --retry 3 --connect-timeout 20 -o ffmpeg.zip "$url"; then
+                if unzip -o ffmpeg.zip && chmod +x ffmpeg; then
+                  mv ffmpeg "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+                  rm -f ffmpeg.zip
+                  DOWNLOADED=1
+                  break
+                fi
+              fi
+            else
+              if curl -fL --retry 3 --connect-timeout 20 -o "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}" "$url"; then
+                chmod +x "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+                DOWNLOADED=1
+                break
+              fi
+            fi
+          done
+          if [[ $DOWNLOADED -ne 1 ]]; then
+            echo "Error: Failed to download ffmpeg from all mirrors"
+            exit 1
+          fi
 
       - name: Download ffmpeg (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
           $TempDir = New-Item -ItemType Directory -Path "$env:TEMP\ffmpeg-dl" -Force
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" `
-            -OutFile "$TempDir\ffmpeg.zip"
-          Expand-Archive -Path "$TempDir\ffmpeg.zip" -DestinationPath $TempDir -Force
-          $FFmpegExe = Get-ChildItem -Path $TempDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
-          Copy-Item -Path $FFmpegExe.FullName -Destination "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}.exe"
-          Remove-Item -Path $TempDir -Recurse -Force
+          $Urls = @(
+            "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip",
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          )
+          $Downloaded = $false
+          foreach ($Url in $Urls) {
+            try {
+              Write-Host "Attempting ffmpeg download from $Url..."
+              $ZipPath = "$TempDir\ffmpeg.zip"
+              if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+              Invoke-WebRequest -Uri $Url -OutFile $ZipPath -UseBasicParsing -TimeoutSec 180
+              if (Test-Path $ZipPath) {
+                $FileSize = (Get-Item $ZipPath).Length
+                if ($FileSize -gt 10000000) {
+                  Write-Host "Download successful ($([math]::Round($FileSize / 1MB, 2)) MB). Extracting..."
+                  Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
+                  $FFmpegExe = Get-ChildItem -Path $TempDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+                  if ($FFmpegExe) {
+                    Copy-Item -Path $FFmpegExe.FullName -Destination "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}.exe" -Force
+                    $Downloaded = $true
+                    Write-Host "Successfully installed ffmpeg.exe from $Url"
+                    break
+                  }
+                } else {
+                  Write-Warning "File too small ($FileSize bytes), likely error page. Trying next mirror..."
+                }
+              }
+            } catch {
+              Write-Warning "Failed downloading from $Url: $_. Trying next fallback mirror..."
+            }
+          }
+          Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+          if (-not $Downloaded) {
+            Write-Error "Failed to download ffmpeg from all mirrors."
+            exit 1
+          }
 
       - name: Download ffmpeg (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
-          curl -L -o ffmpeg.tar.xz "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
-          tar -xf ffmpeg.tar.xz
-          FFMPEG_BIN=$(find . -name "ffmpeg" -type f -executable | head -1)
-          mv "$FFMPEG_BIN" "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
-          chmod +x "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
-          rm -rf ffmpeg.tar.xz ffmpeg-*
+          URLS=(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+            "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+            "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+          )
+          DOWNLOADED=0
+          for url in "${URLS[@]}"; do
+            echo "Attempting Linux ffmpeg download from $url..."
+            if curl -fL --retry 3 --connect-timeout 20 -o ffmpeg.tar.xz "$url"; then
+              if tar -xf ffmpeg.tar.xz; then
+                FFMPEG_BIN=$(find . -name "ffmpeg" -type f -executable | head -1)
+                if [[ -n "$FFMPEG_BIN" ]]; then
+                  mv "$FFMPEG_BIN" "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+                  chmod +x "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+                  rm -rf ffmpeg.tar.xz ffmpeg-*
+                  DOWNLOADED=1
+                  break
+                fi
+              fi
+            fi
+            echo "Mirror $url failed, trying next..."
+            rm -rf ffmpeg.tar.xz ffmpeg-*
+          done
+          if [[ $DOWNLOADED -ne 1 ]]; then
+            echo "Error: Failed to download ffmpeg from all mirrors"
+            exit 1
+          fi
 
       - name: List binaries
         run: ls -la src-tauri/binaries/

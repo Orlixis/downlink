@@ -170,9 +170,9 @@ New-Item -ItemType Directory -Path "src-tauri\binaries" -Force
 Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
   -OutFile "src-tauri\binaries\yt-dlp-x86_64-pc-windows-msvc.exe"
 
-# Download ffmpeg (from gyan.dev)
+# Download ffmpeg (from GitHub CDN)
 $TempDir = New-Item -ItemType Directory -Path "$env:TEMP\ffmpeg-dl" -Force
-Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" `
+Invoke-WebRequest -Uri "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" `
   -OutFile "$TempDir\ffmpeg.zip"
 Expand-Archive -Path "$TempDir\ffmpeg.zip" -DestinationPath $TempDir -Force
 $FFmpegExe = Get-ChildItem -Path $TempDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1

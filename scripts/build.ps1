@@ -93,24 +93,43 @@ function Download-FFmpeg {
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
     try {
-        # Download ffmpeg essentials from gyan.dev
         $ZipFile = Join-Path $TempDir "ffmpeg.zip"
-        $Url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+        $Urls = @(
+            "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip",
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+        )
 
-        Write-Info "Downloading ffmpeg from $Url (this may take a while)..."
-        Invoke-WebRequest -Uri $Url -OutFile $ZipFile -UseBasicParsing
+        $Downloaded = $false
+        foreach ($Url in $Urls) {
+            try {
+                Write-Info "Attempting download from $Url..."
+                if (Test-Path $ZipFile) { Remove-Item $ZipFile -Force }
+                Invoke-WebRequest -Uri $Url -OutFile $ZipFile -UseBasicParsing -TimeoutSec 180
+                if (Test-Path $ZipFile) {
+                    $FileSize = (Get-Item $ZipFile).Length
+                    if ($FileSize -gt 10000000) {
+                        Write-Info "Extracting ffmpeg ($([math]::Round($FileSize / 1MB, 2)) MB)..."
+                        Expand-Archive -Path $ZipFile -DestinationPath $TempDir -Force
+                        $FFmpegExe = Get-ChildItem -Path $TempDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+                        if ($FFmpegExe) {
+                            Copy-Item -Path $FFmpegExe.FullName -Destination $OutputFile -Force
+                            Write-Success "Successfully downloaded and configured ffmpeg"
+                            $Downloaded = $true
+                            break
+                        }
+                    } else {
+                        Write-Warning "File too small ($FileSize bytes), likely error page. Trying next mirror..."
+                    }
+                }
+            } catch {
+                Write-Warning "Failed downloading from $Url: $_. Trying next fallback mirror..."
+            }
+        }
 
-        Write-Info "Extracting ffmpeg..."
-        Expand-Archive -Path $ZipFile -DestinationPath $TempDir -Force
-
-        # Find ffmpeg.exe in the extracted folder
-        $FFmpegExe = Get-ChildItem -Path $TempDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
-
-        if ($FFmpegExe) {
-            Copy-Item -Path $FFmpegExe.FullName -Destination $OutputFile
-            Write-Success "Downloaded ffmpeg"
-        } else {
-            Write-Error "Could not find ffmpeg.exe in downloaded archive"
+        if (-not $Downloaded) {
+            Write-Error "Could not download ffmpeg from any mirror"
             exit 1
         }
     }

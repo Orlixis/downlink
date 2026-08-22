@@ -153,48 +153,112 @@ download_ffmpeg() {
 
     case "$platform" in
         macos-arm64|macos-x64)
-            # evermeet.cx provides macOS builds
-            curl -L -o "$temp_dir/ffmpeg.zip" "https://evermeet.cx/ffmpeg/getrelease/zip"
-            unzip -o "$temp_dir/ffmpeg.zip" -d "$temp_dir"
-            mv "$temp_dir/ffmpeg" "$output_file"
+            local urls=(
+                "https://evermeet.cx/ffmpeg/getrelease/zip"
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b7.1/darwin-x64"
+            )
+            local downloaded=0
+            for url in "${urls[@]}"; do
+                log_info "Trying macOS ffmpeg mirror: $url"
+                if [[ "$url" == *".zip" ]]; then
+                    if curl -fL --retry 3 --connect-timeout 20 -o "$temp_dir/ffmpeg.zip" "$url"; then
+                        if unzip -o "$temp_dir/ffmpeg.zip" -d "$temp_dir"; then
+                            mv "$temp_dir/ffmpeg" "$output_file"
+                            chmod +x "$output_file"
+                            downloaded=1
+                            break
+                        fi
+                    fi
+                else
+                    if curl -fL --retry 3 --connect-timeout 20 -o "$output_file" "$url"; then
+                        chmod +x "$output_file"
+                        downloaded=1
+                        break
+                    fi
+                fi
+            done
+            if [[ $downloaded -ne 1 ]]; then
+                log_error "Failed to download macOS ffmpeg from all mirrors"
+                rm -rf "$temp_dir"
+                return 1
+            fi
             ;;
         windows-x64)
-            # Use gyan.dev builds for Windows
-            local ffmpeg_url="https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-            curl -L -o "$temp_dir/ffmpeg.zip" "$ffmpeg_url"
-            unzip -o "$temp_dir/ffmpeg.zip" -d "$temp_dir"
-            # Find the ffmpeg.exe in the extracted folder
-            local ffmpeg_exe=$(find "$temp_dir" -name "ffmpeg.exe" -type f | head -1)
-            if [[ -n "$ffmpeg_exe" ]]; then
-                mv "$ffmpeg_exe" "$output_file"
-            else
-                log_error "Could not find ffmpeg.exe in downloaded archive"
+            local urls=(
+                "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+                "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+                "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip"
+                "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+            )
+            local downloaded=0
+            for url in "${urls[@]}"; do
+                log_info "Trying Windows ffmpeg mirror: $url"
+                if curl -fL --retry 3 --connect-timeout 20 -o "$temp_dir/ffmpeg.zip" "$url"; then
+                    if unzip -o "$temp_dir/ffmpeg.zip" -d "$temp_dir"; then
+                        local ffmpeg_exe=$(find "$temp_dir" -name "ffmpeg.exe" -type f | head -1)
+                        if [[ -n "$ffmpeg_exe" ]]; then
+                            mv "$ffmpeg_exe" "$output_file"
+                            downloaded=1
+                            break
+                        fi
+                    fi
+                fi
+            done
+            if [[ $downloaded -ne 1 ]]; then
+                log_error "Failed to download Windows ffmpeg from all mirrors"
                 rm -rf "$temp_dir"
                 return 1
             fi
             ;;
         linux-x64)
-            # Use BtbN/FFmpeg-Builds for Linux x64
-            curl -L -o "$temp_dir/ffmpeg.tar.xz" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
-            tar -xf "$temp_dir/ffmpeg.tar.xz" -C "$temp_dir"
-            local ffmpeg_bin=$(find "$temp_dir" -name "ffmpeg" -type f -executable | head -1)
-            if [[ -n "$ffmpeg_bin" ]]; then
-                mv "$ffmpeg_bin" "$output_file"
-            else
-                log_error "Could not find ffmpeg in downloaded archive"
+            local urls=(
+                "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+                "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+            )
+            local downloaded=0
+            for url in "${urls[@]}"; do
+                log_info "Trying Linux x64 ffmpeg mirror: $url"
+                if curl -fL --retry 3 --connect-timeout 20 -o "$temp_dir/ffmpeg.tar.xz" "$url"; then
+                    if tar -xf "$temp_dir/ffmpeg.tar.xz" -C "$temp_dir"; then
+                        local ffmpeg_bin=$(find "$temp_dir" -name "ffmpeg" -type f -executable | head -1)
+                        if [[ -n "$ffmpeg_bin" ]]; then
+                            mv "$ffmpeg_bin" "$output_file"
+                            chmod +x "$output_file"
+                            downloaded=1
+                            break
+                        fi
+                    fi
+                fi
+            done
+            if [[ $downloaded -ne 1 ]]; then
+                log_error "Failed to download Linux x64 ffmpeg from all mirrors"
                 rm -rf "$temp_dir"
                 return 1
             fi
             ;;
         linux-arm64)
-            # Use BtbN/FFmpeg-Builds for Linux arm64
-            curl -L -o "$temp_dir/ffmpeg.tar.xz" "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
-            tar -xf "$temp_dir/ffmpeg.tar.xz" -C "$temp_dir"
-            local ffmpeg_bin=$(find "$temp_dir" -name "ffmpeg" -type f -executable | head -1)
-            if [[ -n "$ffmpeg_bin" ]]; then
-                mv "$ffmpeg_bin" "$output_file"
-            else
-                log_error "Could not find ffmpeg in downloaded archive"
+            local urls=(
+                "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
+            )
+            local downloaded=0
+            for url in "${urls[@]}"; do
+                log_info "Trying Linux arm64 ffmpeg mirror: $url"
+                if curl -fL --retry 3 --connect-timeout 20 -o "$temp_dir/ffmpeg.tar.xz" "$url"; then
+                    if tar -xf "$temp_dir/ffmpeg.tar.xz" -C "$temp_dir"; then
+                        local ffmpeg_bin=$(find "$temp_dir" -name "ffmpeg" -type f -executable | head -1)
+                        if [[ -n "$ffmpeg_bin" ]]; then
+                            mv "$ffmpeg_bin" "$output_file"
+                            chmod +x "$output_file"
+                            downloaded=1
+                            break
+                        fi
+                    fi
+                fi
+            done
+            if [[ $downloaded -ne 1 ]]; then
+                log_error "Failed to download Linux arm64 ffmpeg from all mirrors"
                 rm -rf "$temp_dir"
                 return 1
             fi
