@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.58](https://github.com/Orlixis/downlink/compare/v0.1.57...v0.1.58) (2026-08-22)
+
+
+### Features
+
+* add update installation state tracking and UI progress indicators for version 0.1.57 ([71929f2](https://github.com/Orlixis/downlink/commit/71929f22097603f5ef421a5ec363557d889910c5))
+* implement robust multi-mirror ffmpeg download logic with fallback support across build scripts and CI workflows ([54a44b7](https://github.com/Orlixis/downlink/commit/54a44b73466b45a64e65e35b323b965d56986414))
+
 ### [0.1.57](https://github.com/Orlixis/downlink/compare/v0.1.56...v0.1.57) (2026-08-22)
 
 
