@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.54](https://github.com/Orlixis/downlink/compare/v0.1.53...v0.1.54) (2026-08-22)
+
+
+### Features
+
+* add canonical URL normalization for Dailymotion to improve download reliability ([547b47a](https://github.com/Orlixis/downlink/commit/547b47ae8b7ebc4b9e7ab9ba3a3e519522c564da))
+
 ### [0.1.53](https://github.com/Orlixis/downlink/compare/v0.1.52...v0.1.53) (2026-08-22)
 
 
