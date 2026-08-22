@@ -223,11 +223,13 @@ export function useDownlinkEvents({
     });
 
     // App Update download progress stream
-    listen<{ downloaded: number; total: number }>("app-update-progress", (eventPayload) => {
+    listen<{ downloaded: number; total: number; status?: string }>("app-update-progress", (eventPayload) => {
       if (isMounted && setUpdateAvailable) {
+        const isInstalling = eventPayload.payload.status === "installing";
         setUpdateAvailable((prev) => ({
           ...prev,
-          downloading: true,
+          downloading: !isInstalling,
+          installing: isInstalling,
           downloadProgress: {
             downloaded: eventPayload.payload.downloaded,
             total: eventPayload.payload.total,

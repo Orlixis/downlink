@@ -33,6 +33,7 @@ export function UpdateModal({
     latestVersion: version,
     releaseNotes,
     downloading,
+    installing,
     downloadProgress,
     readyToInstall,
     error,
@@ -99,7 +100,7 @@ export function UpdateModal({
                 </p>
               </div>
             </div>
-                {!downloading && (
+                {!downloading && !installing && (
                   <button
                     onClick={onClose}
                     className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
@@ -115,6 +116,16 @@ export function UpdateModal({
                   <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
                     <p className="font-medium">Failed to update</p>
                     <p className="mt-1 text-red-300/80">{error}</p>
+                  </div>
+                ) : installing ? (
+                  <div className="flex flex-col items-center py-6 text-center">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/20 text-blue-400 animate-pulse">
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                    <h4 className="text-lg font-medium text-white">Installing Update...</h4>
+                    <p className="mt-2 text-sm text-zinc-400">
+                      Extracting files and applying update. Downlink will restart automatically to complete installation.
+                    </p>
                   </div>
                 ) : readyToInstall ? (
                   <div className="flex flex-col items-center py-6 text-center">
@@ -168,7 +179,12 @@ export function UpdateModal({
 
               {/* Footer Controls */}
               <div className="flex items-center justify-end gap-3 border-t border-white/5 bg-zinc-950/50 px-6 py-4">
-                {readyToInstall ? (
+                {installing ? (
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                    <span>Applying update...</span>
+                  </div>
+                ) : readyToInstall ? (
                   <>
                     <button
                       type="button"

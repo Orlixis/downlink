@@ -23,6 +23,7 @@ export interface UpdateAvailableState {
   releaseNotes: string | null;
   dismissed: boolean;
   downloading: boolean;
+  installing?: boolean;
   downloadProgress: {
     downloaded: number;
     total: number | null;

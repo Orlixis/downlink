@@ -243,6 +243,7 @@ pub async fn install_app_update(app: AppHandle) -> Result<(), String> {
     let mut downloaded: u64 = 0;
 
     let app_clone = app.clone();
+    let app_clone_install = app.clone();
     update
         .download_and_install(
             move |chunk_length, content_length| {
@@ -253,12 +254,21 @@ pub async fn install_app_update(app: AppHandle) -> Result<(), String> {
                     serde_json::json!({
                         "downloaded": downloaded,
                         "total": total,
+                        "status": "downloading"
                     }),
                 );
                 log::info!("Downloaded {} of {} bytes", downloaded, total);
             },
             move || {
-                log::info!("Download complete, installing...");
+                let _ = app_clone_install.emit(
+                    "app-update-progress",
+                    serde_json::json!({
+                        "downloaded": downloaded,
+                        "total": downloaded,
+                        "status": "installing"
+                    }),
+                );
+                log::info!("Download complete, installing update...");
             },
         )
         .await
