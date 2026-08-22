@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.53](https://github.com/Orlixis/downlink/compare/v0.1.52...v0.1.53) (2026-08-22)
+
+
+### Bug Fixes
+
+* add time-based safety checks to prevent janitor from removing active fragment files and staging directories ([aafb782](https://github.com/Orlixis/downlink/commit/aafb782c0eca28d4ceafbd2d2656db3d7d91befc))
+
 ### [0.1.52](https://github.com/Orlixis/downlink/compare/v0.1.50...v0.1.52) (2026-08-22)
 
 
