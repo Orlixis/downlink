@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Chrome, Compass, Copy, FolderOpen, Globe, Info, Loader2, Play, Puzzle, ShieldCheck, Sparkles, Star, Zap } from "lucide-react";
+import { Check, Chrome, Compass, Copy, ExternalLink, FolderOpen, Globe, Info, Loader2, Play, Puzzle, ShieldCheck, Sparkles, Star, Zap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 type BrowserTarget = "chrome" | "firefox" | "safari";
@@ -94,6 +94,14 @@ export function BrowserTab() {
     }
   };
 
+  const handleOpenStore = async (url: string) => {
+    try {
+      await invoke("open_url", { url });
+    } catch {
+      window.open(url, "_blank");
+    }
+  };
+
   const getBrowserIcon = (id: string) => {
     switch (id) {
       case "chrome":
@@ -134,6 +142,51 @@ export function BrowserTab() {
           <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
             Port 3984 Ready
           </span>
+        </div>
+      </div>
+
+      {/* Official Extension Store Install Cards */}
+      <div className="rounded-xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-purple-500/5 to-transparent p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-amber-400" />
+            <span className="text-xs font-semibold text-white">Official Browser Add-ons &amp; Stores</span>
+          </div>
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-medium text-amber-300 border border-amber-500/20">
+            1-Click Browser Install
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* Firefox AMO Store */}
+          <button
+            onClick={() => handleOpenStore("https://addons.mozilla.org/en-US/firefox/addon/downlink-companion/")}
+            className="flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-left transition-all hover:bg-amber-500/20 hover:border-amber-500/50 group"
+          >
+            <div className="flex items-center gap-2.5">
+              <Globe className="h-4 w-4 text-amber-400 group-hover:scale-110 transition-transform" />
+              <div>
+                <div className="text-xs font-semibold text-zinc-100">Firefox Add-on Store</div>
+                <div className="text-[10px] text-zinc-400">addons.mozilla.org</div>
+              </div>
+            </div>
+            <ExternalLink className="h-3.5 w-3.5 text-amber-400 opacity-80 group-hover:opacity-100" />
+          </button>
+
+          {/* Chrome / Chromium Store */}
+          <button
+            onClick={() => handleOpenStore("https://chrome.google.com/webstore")}
+            className="flex items-center justify-between rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-left transition-all hover:bg-sky-500/15 hover:border-sky-500/40 group"
+          >
+            <div className="flex items-center gap-2.5">
+              <Chrome className="h-4 w-4 text-sky-400 group-hover:scale-110 transition-transform" />
+              <div>
+                <div className="text-xs font-semibold text-zinc-100">Chrome Web Store</div>
+                <div className="text-[10px] text-zinc-400">Chrome, Brave, Edge &amp; Opera</div>
+              </div>
+            </div>
+            <ExternalLink className="h-3.5 w-3.5 text-sky-400 opacity-80 group-hover:opacity-100" />
+          </button>
         </div>
       </div>
 

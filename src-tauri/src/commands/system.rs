@@ -59,7 +59,38 @@ pub async fn open_file(path: String) -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        open::that(&path).map_err(|e| format!("Failed to open file: {e}"))
+        open::that(&path).map_err(|e| format!("Failed to open file: {e}"))?;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub async fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", &url])
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+        Ok(())
     }
 }
 

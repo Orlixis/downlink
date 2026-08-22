@@ -1,5 +1,7 @@
 # Firefox Add-on (AMO) Listing Guide — Downlink Companion
 
+> **Official Live Add-on URL**: [https://addons.mozilla.org/en-US/firefox/addon/downlink-companion/](https://addons.mozilla.org/en-US/firefox/addon/downlink-companion/)
+
 ## 1. Distribution Option (Screen 1)
 - Select: **"On this site"** (public listing on addons.mozilla.org)
 - Click **Continue**.

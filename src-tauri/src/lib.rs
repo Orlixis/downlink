@@ -385,6 +385,7 @@ pub fn run() {
             commands::settings::get_default_download_dir,
             commands::system::open_file,
             commands::system::open_folder,
+            commands::system::open_url,
             commands::system::get_extension_folder_path,
             commands::system::detect_installed_browsers,
             commands::system::launch_browser_extension_installer,
