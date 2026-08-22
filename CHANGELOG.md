@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.56](https://github.com/Orlixis/downlink/compare/v0.1.55...v0.1.56) (2026-08-22)
+
+
+### Features
+
+* add browser detection and extension management commands to backend ([bff1f5f](https://github.com/Orlixis/downlink/commit/bff1f5f2c8d6037bde06cf3fb269e56706dc13cb))
+* add browser extension store links to settings and implement cross-platform URL opening command ([89a4b5a](https://github.com/Orlixis/downlink/commit/89a4b5af258957876ca542afcc302f29c0010444))
+* implement extension build script, update Firefox manifest, and sanitize DOM injection methods across platforms. ([b3e8d95](https://github.com/Orlixis/downlink/commit/b3e8d9580843d8654dddf06b5ebeba0c70bf1199))
+
 ### [0.1.55](https://github.com/Orlixis/downlink/compare/v0.1.54...v0.1.55) (2026-08-22)
 
 
