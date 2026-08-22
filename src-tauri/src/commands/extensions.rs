@@ -235,7 +235,7 @@ pub async fn launch_browser_extension_installer(
         "opera" => "opera://extensions",
         "vivaldi" => "vivaldi://extensions",
         "arc" => "arc://extensions",
-        "firefox" | "zen" => "about:debugging#/runtime/this-firefox",
+        "firefox" | "zen" => "https://addons.mozilla.org/en-US/firefox/addon/downlink-companion/",
         _ => "chrome://extensions",
     };
 
