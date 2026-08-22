@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Sparkles, Zap, ShieldCheck } from "lucide-react";
+import { Globe, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { BrowserTarget, DetectedBrowser } from "./browser/types";
 import { GatewayStatus } from "./browser/GatewayStatus";
-import { OfficialStoreCard } from "./browser/OfficialStoreCard";
 import { DetectedBrowserItem } from "./browser/DetectedBrowserItem";
-import { ManualGuide } from "./browser/ManualGuide";
+import { DeveloperOptions } from "./browser/DeveloperOptions";
 
 export function BrowserTab() {
   const [selectedBrowser, setSelectedBrowser] = useState<BrowserTarget>("chrome");
@@ -83,49 +82,35 @@ export function BrowserTab() {
     }
   };
 
-  const handleOpenStore = async (url: string) => {
-    try {
-      await invoke("open_url", { url });
-    } catch {
-      window.open(url, "_blank");
-    }
-  };
-
   const activeInstalled = installedBrowsers.filter((b) => b.is_installed);
 
   return (
     <div className="space-y-4">
-      {/* 1. Loopback Gateway RPC Card */}
+      {/* 1. Compact Gateway RPC Status */}
       <GatewayStatus />
 
-      {/* 2. Official Stores (Permanent signed installs) */}
-      <OfficialStoreCard onOpenStore={handleOpenStore} />
-
-      {/* 3. Detected Browsers on System */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3.5 space-y-3">
+      {/* 2. Primary Detected Browsers List */}
+      <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-blue-400" />
-            <span className="text-xs font-semibold text-zinc-100">
-              Installed Browsers
-            </span>
-          </div>
-          <span className="text-[11px] text-zinc-400">
-            {loadingBrowsers ? "Scanning..." : `${activeInstalled.length} Detected`}
+          <label className="block text-xs font-medium text-zinc-300">
+            Detected Browsers
+          </label>
+          <span className="text-[11px] text-zinc-400 font-mono">
+            {loadingBrowsers ? "Scanning..." : `${activeInstalled.length} Installed`}
           </span>
         </div>
 
         {loadingBrowsers ? (
-          <div className="flex items-center justify-center py-6 text-zinc-400">
+          <div className="flex items-center justify-center py-8 text-zinc-400 rounded-xl border border-zinc-800 bg-zinc-900/30">
             <Loader2 className="h-4 w-4 animate-spin mr-2 text-blue-400" />
-            <span className="text-xs">Discovering installed browsers...</span>
+            <span className="text-xs">Detecting installed browsers...</span>
           </div>
         ) : activeInstalled.length === 0 ? (
-          <p className="py-2 text-[11px] text-zinc-400 text-center">
-            No browsers automatically detected in standard directories. Use manual setup below.
-          </p>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-center text-xs text-zinc-400">
+            No supported browsers automatically detected. Use developer load below.
+          </div>
         ) : (
-          <div className="divide-y divide-white/[0.05] rounded-lg border border-white/[0.06] bg-black/20 overflow-hidden">
+          <div className="divide-y divide-zinc-800/80 rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
             {activeInstalled.map((browser) => (
               <DetectedBrowserItem
                 key={browser.id}
@@ -139,8 +124,8 @@ export function BrowserTab() {
         )}
       </div>
 
-      {/* 4. Manual / Developer Installation Guide */}
-      <ManualGuide
+      {/* 3. Sleek Collapsible Developer & Offline Options */}
+      <DeveloperOptions
         selectedBrowser={selectedBrowser}
         onSelectBrowser={setSelectedBrowser}
         onRevealFolder={handleRevealInFinder}
@@ -148,29 +133,6 @@ export function BrowserTab() {
         copied={copied}
         revealed={revealed}
       />
-
-      {/* 5. Feature summary badges */}
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-2.5">
-          <div className="flex items-center gap-1.5 text-blue-400">
-            <Zap className="h-3.5 w-3.5" />
-            <span className="text-[11px] font-medium text-zinc-200">1-Click Video Pill</span>
-          </div>
-          <p className="mt-1 text-[10px] text-zinc-400 leading-relaxed">
-            Floating download button automatically attached to web video players.
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-2.5">
-          <div className="flex items-center gap-1.5 text-emerald-400">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span className="text-[11px] font-medium text-zinc-200">Cookie Forwarding</span>
-          </div>
-          <p className="mt-1 text-[10px] text-zinc-400 leading-relaxed">
-            Passes active session cookies to prevent 403 Forbidden on protected streams.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
