@@ -78,8 +78,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentTab || !currentTab.url) return;
 
     downloadTabBtn.disabled = true;
-    const origText = downloadTabBtn.innerHTML;
-    downloadTabBtn.innerHTML = '<span>Sending to Downlink...</span>';
+    const btnSpan = downloadTabBtn.querySelector('span');
+    const origText = btnSpan ? btnSpan.textContent : 'Download Active Media';
+    if (btnSpan) btnSpan.textContent = 'Sending to Downlink...';
 
     chrome.runtime.sendMessage(
       {
@@ -94,7 +95,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
       (res) => {
         downloadTabBtn.disabled = false;
-        downloadTabBtn.innerHTML = origText;
+        if (btnSpan) btnSpan.textContent = origText;
 
         if (res && res.success) {
           showToast('Added to Downlink queue', true);

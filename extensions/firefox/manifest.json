@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Downlink — Media Downloader Companion",
-  "version": "0.1.54",
+  "version": "0.1.55",
   "description": "Capture videos, playlists, audio streams, and web media directly into Downlink Desktop with 1 click.",
   "browser_specific_settings": {
     "gecko": {
       "id": "downlink@downlink.app",
-      "strict_min_version": "109.0"
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
   "icons": {
@@ -23,13 +26,21 @@
     }
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_idle"
@@ -60,7 +71,9 @@
         "icons/icon-48.png",
         "icons/icon-128.png"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

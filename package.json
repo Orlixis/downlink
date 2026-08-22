@@ -13,6 +13,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:debug": "tauri build --debug",
+    "package:extensions": "node scripts/package-extensions.js",
     "release": "standard-version"
   },
   "dependencies": {

@@ -157,26 +157,35 @@
     if (!hud) {
       hud = document.createElement('div');
       hud.className = 'dl-dynamic-island';
+
+      const hudTemplate = `
+        <div class="dl-island-body">
+          <div class="dl-island-leading">
+            ${ICONS.downlinkLogo}
+            <div class="dl-island-pulse"></div>
+          </div>
+          <div class="dl-island-content">
+            <div class="dl-island-title"></div>
+            <div class="dl-island-subtitle"></div>
+          </div>
+          <div class="dl-island-badge">
+            ${ICONS.check}
+            <span>Sent to App</span>
+          </div>
+        </div>
+        <div class="dl-island-shimmer"></div>
+      `;
+      const parsedDoc = new DOMParser().parseFromString(hudTemplate, 'text/html');
+      while (parsedDoc.body.firstChild) {
+        hud.appendChild(parsedDoc.body.firstChild);
+      }
       shadowRoot.appendChild(hud);
     }
 
-    hud.innerHTML = `
-      <div class="dl-island-body">
-        <div class="dl-island-leading">
-          ${ICONS.downlinkLogo}
-          <div class="dl-island-pulse"></div>
-        </div>
-        <div class="dl-island-content">
-          <div class="dl-island-title">${titleText}</div>
-          <div class="dl-island-subtitle">${subText}</div>
-        </div>
-        <div class="dl-island-badge">
-          ${ICONS.check}
-          <span>Sent to App</span>
-        </div>
-      </div>
-      <div class="dl-island-shimmer"></div>
-    `;
+    const titleEl = hud.querySelector('.dl-island-title');
+    const subEl = hud.querySelector('.dl-island-subtitle');
+    if (titleEl) titleEl.textContent = titleText;
+    if (subEl) subEl.textContent = subText;
 
     hud.classList.remove('active');
     void hud.offsetWidth; // Trigger reflow
@@ -660,7 +669,7 @@
     // Build the Dock DOM inside ShadowRoot using vector brand mark
     const container = document.createElement('div');
     container.className = 'dl-dock-container';
-    container.innerHTML = `
+    const dockTemplate = `
       <div class="dl-pill" title="Capture media with Downlink Desktop">
         <div class="dl-brand">
           ${ICONS.downlinkLogo}
@@ -716,6 +725,10 @@
         </button>
       </div>
     `;
+    const dockDoc = new DOMParser().parseFromString(dockTemplate, 'text/html');
+    while (dockDoc.body.firstChild) {
+      container.appendChild(dockDoc.body.firstChild);
+    }
 
     shadowRoot.appendChild(container);
 
@@ -777,7 +790,8 @@
       launchGravityOrb(clickX, clickY);
 
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span>Sending to Downlink...</span>`;
+      const btnSpan = submitBtn.querySelector('span');
+      if (btnSpan) btnSpan.textContent = 'Sending to Downlink...';
       actionText.textContent = 'Sending...';
 
       let targetUrl = window.location.href;
@@ -835,6 +849,7 @@
             modal.classList.remove('open');
             container.classList.add('captured');
             actionText.textContent = 'Queued';
+            if (btnSpan) btnSpan.textContent = 'Send to Downlink';
 
             // Show Apple Dynamic Island HUD in browser!
             showDynamicIslandHUD(
@@ -849,10 +864,10 @@
             }, 3500);
           } else {
             actionText.textContent = 'App Offline';
-            submitBtn.innerHTML = `${ICONS.downlink}<span>Downlink App Offline</span>`;
+            if (btnSpan) btnSpan.textContent = 'Downlink App Offline';
             setTimeout(() => {
               actionText.textContent = 'Download';
-              submitBtn.innerHTML = `${ICONS.downlink}<span>Send to Downlink</span>`;
+              if (btnSpan) btnSpan.textContent = 'Send to Downlink';
               showDockTemporarily(2000);
             }, 2500);
           }
