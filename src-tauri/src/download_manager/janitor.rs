@@ -25,6 +25,7 @@ pub fn is_temp_fragment_file(filename: &str) -> bool {
 }
 
 /// Cleans up orphaned yt-dlp fragment files in a specific directory (e.g. Downloads folder).
+/// Only removes files that have NOT been modified in the last 60 seconds to avoid interrupting active downloads.
 pub async fn cleanup_directory_fragments(dir: &Path) -> usize {
     if !dir.exists() || !dir.is_dir() {
         return 0;
@@ -37,6 +38,18 @@ pub async fn cleanup_directory_fragments(dir: &Path) -> usize {
             if path.is_file() {
                 if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                     if is_temp_fragment_file(file_name) {
+                        // Safety check: ensure file is older than 60 seconds
+                        if let Ok(meta) = path.metadata() {
+                            if let Ok(modified) = meta.modified() {
+                                if let Ok(elapsed) = modified.elapsed() {
+                                    if elapsed < Duration::from_secs(60) {
+                                        log::debug!("Janitor: Skipping recently modified fragment: {:?}", path);
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+
                         log::info!("Janitor: Removing orphaned fragment file: {:?}", path);
                         if fs::remove_file(&path).await.is_ok() {
                             count += 1;
@@ -49,7 +62,8 @@ pub async fn cleanup_directory_fragments(dir: &Path) -> usize {
     count
 }
 
-/// Cleans up all subfolders in the application's internal tmp directory.
+/// Cleans up abandoned subfolders in the application's internal tmp directory.
+/// Strictly skips any staging folder created or modified within the last 15 minutes to guarantee active downloads are never touched.
 pub async fn cleanup_app_tmp_dir() -> usize {
     let mut count = 0;
     if let Ok(data_dir) = crate::db::app_data_dir() {
@@ -58,8 +72,21 @@ pub async fn cleanup_app_tmp_dir() -> usize {
             if let Ok(mut entries) = fs::read_dir(&tmp_dir).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
                     let path = entry.path();
+                    
+                    // Safety check: ensure staging folder is older than 15 minutes (900 seconds)
+                    if let Ok(meta) = path.metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            if let Ok(elapsed) = modified.elapsed() {
+                                if elapsed < Duration::from_secs(900) {
+                                    log::debug!("Janitor: Skipping active/recent staging folder: {:?}", path);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
                     if path.is_dir() {
-                        log::info!("Janitor: Cleaning staging folder: {:?}", path);
+                        log::info!("Janitor: Cleaning abandoned staging folder: {:?}", path);
                         if fs::remove_dir_all(&path).await.is_ok() {
                             count += 1;
                         }
@@ -85,7 +112,7 @@ pub async fn run_full_cleanup(download_dirs: Vec<PathBuf>) {
     }
 
     log::info!(
-        "Janitor: Cleanup completed. Removed {} staging folders and {} orphaned fragments in download folders.",
+        "Janitor: Cleanup completed. Removed {} abandoned staging folders and {} orphaned fragments in download folders.",
         tmp_count,
         dir_count
     );
@@ -94,8 +121,8 @@ pub async fn run_full_cleanup(download_dirs: Vec<PathBuf>) {
 /// Spawns the periodic janitor maintenance task.
 pub fn start_janitor_service(_app_handle: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
-        // Initial cleanup 2 seconds after startup
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Initial delay after startup
+        tokio::time::sleep(Duration::from_secs(10)).await;
 
         let get_dirs = || -> Vec<PathBuf> {
             let mut dirs = Vec::new();
