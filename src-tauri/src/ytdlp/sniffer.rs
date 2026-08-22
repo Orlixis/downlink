@@ -1,6 +1,47 @@
 use std::time::Duration;
 use tauri::{Listener, WebviewUrl, WebviewWindowBuilder};
 
+/// Extracts a canonical https://www.dailymotion.com/video/{id} URL from any Dailymotion embed, manifest, player URL, or HTML snippet.
+pub fn extract_dailymotion_canonical_url(text_or_url: &str) -> Option<String> {
+    // 1. Matches geo.dailymotion.com/player.html?video=ID or ?video=ID or &video=ID
+    if let Ok(re) = regex::Regex::new(r#"(?i)(?:geo\.dailymotion\.com/player[^"'\s<>]*[?&]video=|[?&]video=)([a-zA-Z0-9]+)"#) {
+        if let Some(caps) = re.captures(text_or_url) {
+            if let Some(id) = caps.get(1) {
+                let id_str = id.as_str();
+                if id_str.len() >= 4 {
+                    return Some(format!("https://www.dailymotion.com/video/{}", id_str));
+                }
+            }
+        }
+    }
+
+    // 2. Matches dailymotion.com/(embed/video|video|cdn/manifest/video)/ID
+    if let Ok(re) = regex::Regex::new(r#"(?i)dailymotion\.com/(?:embed/video/|video/|cdn/manifest/video/)([a-zA-Z0-9]+)"#) {
+        if let Some(caps) = re.captures(text_or_url) {
+            if let Some(id) = caps.get(1) {
+                let id_str = id.as_str();
+                if id_str.len() >= 4 {
+                    return Some(format!("https://www.dailymotion.com/video/{}", id_str));
+                }
+            }
+        }
+    }
+
+    // 3. Matches data-video="ID"
+    if let Ok(re) = regex::Regex::new(r#"(?i)data-video=["']([a-zA-Z0-9]+)["']"#) {
+        if let Some(caps) = re.captures(text_or_url) {
+            if let Some(id) = caps.get(1) {
+                let id_str = id.as_str();
+                if id_str.len() >= 4 {
+                    return Some(format!("https://www.dailymotion.com/video/{}", id_str));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 pub async fn fallback_iframe_sniffer(url: &str) -> Option<String> {
     if !url.starts_with("http") {
         return None;
@@ -14,15 +55,10 @@ pub async fn fallback_iframe_sniffer(url: &str) -> Option<String> {
 
     let text = client.get(url).send().await.ok()?.text().await.ok()?;
 
-    // 1. Check for Dailymotion embed / geo player / data-video attribute
-    if let Some(caps) = regex::Regex::new(r#"(?:geo\.dailymotion\.com/player/[^"'\s<>]+\?video=|(?:www\.)?dailymotion\.com/(?:embed/)?video/|data-video=["'])([a-zA-Z0-9]+)"#).ok()?.captures(&text) {
-        if let Some(video_id) = caps.get(1) {
-            let id_str = video_id.as_str();
-            if id_str.len() >= 4 {
-                log::info!("fallback_iframe_sniffer: Found Dailymotion video ID {}", id_str);
-                return Some(format!("https://www.dailymotion.com/video/{}", id_str));
-            }
-        }
+    // 1. Direct Dailymotion canonical extraction (player.html, video=, embed, etc.)
+    if let Some(canonical) = extract_dailymotion_canonical_url(&text) {
+        log::info!("fallback_iframe_sniffer: Found Dailymotion canonical URL {}", canonical);
+        return Some(canonical);
     }
 
     // 2. Check for schema.org / OpenGraph meta tags
@@ -30,12 +66,8 @@ pub async fn fallback_iframe_sniffer(url: &str) -> Option<String> {
     if let Some(caps) = meta_re.captures(&text) {
         if let Some(m) = caps.get(1) {
             let u = m.as_str();
-            if u.contains("dailymotion.com") {
-                if let Some(id_caps) = regex::Regex::new(r#"(?:video=|video/)([a-zA-Z0-9]+)"#).ok()?.captures(u) {
-                    if let Some(id) = id_caps.get(1) {
-                        return Some(format!("https://www.dailymotion.com/video/{}", id.as_str()));
-                    }
-                }
+            if let Some(canonical) = extract_dailymotion_canonical_url(u) {
+                return Some(canonical);
             }
             if u.starts_with("http") {
                 log::info!("fallback_iframe_sniffer: Found meta embed URL {}", u);
@@ -50,12 +82,8 @@ pub async fn fallback_iframe_sniffer(url: &str) -> Option<String> {
     if let Some(captures) = re.captures(&text) {
         if let Some(m) = captures.get(0) {
             let u = m.as_str();
-            if u.contains("geo.dailymotion.com") || u.contains("dailymotion.com") {
-                if let Some(id_caps) = regex::Regex::new(r#"(?:video=|video/)([a-zA-Z0-9]+)"#).ok()?.captures(u) {
-                    if let Some(id) = id_caps.get(1) {
-                        return Some(format!("https://www.dailymotion.com/video/{}", id.as_str()));
-                    }
-                }
+            if let Some(canonical) = extract_dailymotion_canonical_url(u) {
+                return Some(canonical);
             }
             log::info!("fallback_iframe_sniffer: Found provider URL {}", u);
             return Some(u.to_string());

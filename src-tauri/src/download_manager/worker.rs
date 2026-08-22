@@ -21,11 +21,12 @@ pub async fn run_download_worker(
     completion_tx: mpsc::Sender<()>,
 ) {
     let was_stopped = download_info.status == DownloadStatus::Stopped;
-    let target_url = download_info
+    let raw_target_url = download_info
         .stream_url
         .as_deref()
-        .unwrap_or(&download_info.source_url)
-        .to_string();
+        .unwrap_or(&download_info.source_url);
+    let target_url = crate::ytdlp::extract_dailymotion_canonical_url(raw_target_url)
+        .unwrap_or_else(|| raw_target_url.to_string());
     let effective_referer = download_info
         .referer_url
         .as_deref()

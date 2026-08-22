@@ -194,7 +194,8 @@ pub async fn execute_download(
         args.push(ffmpeg_path.to_string_lossy().to_string());
     }
 
-    args.push(url.to_string());
+    let target_exec_url = crate::ytdlp::extract_dailymotion_canonical_url(url).unwrap_or_else(|| url.to_string());
+    args.push(target_exec_url);
     log::info!("Starting download {} with args: {:?}", id, args);
 
     let mut cmd = Command::new(&config_guard.yt_dlp_path);

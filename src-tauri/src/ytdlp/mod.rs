@@ -20,7 +20,9 @@ pub use self::metadata::{
     height_label_and_format, infer_title_from_url, is_token_or_hash, parse_playlist_entry,
     parse_preview_metadata, parse_quality_options,
 };
-pub use self::sniffer::{advanced_webview_sniffer, fallback_iframe_sniffer};
+pub use self::sniffer::{
+    advanced_webview_sniffer, extract_dailymotion_canonical_url, fallback_iframe_sniffer,
+};
 pub use self::types::{
     PlaylistEntry, PreviewMetadata, VideoQualityOption, YtDlpConfig, YtDlpError, YtDlpErrorKind,
     YtDlpOutput,
@@ -174,7 +176,11 @@ impl YtDlpRunner {
                         if let Some(first) = json_lines.into_iter().next() {
                             if let Ok(mut meta) = parse_preview_metadata(&first, &iframe_url) {
                                 meta.url = url.to_string();
-                                meta.stream_url = Some(iframe_url.clone());
+                                if iframe_url.contains("dailymotion.com/video/") {
+                                    meta.stream_url = None;
+                                } else {
+                                    meta.stream_url = Some(iframe_url.clone());
+                                }
                                 return Ok(meta);
                             }
                         }
@@ -182,12 +188,18 @@ impl YtDlpRunner {
                 }
 
                 if let Some(app_handle) = app {
-                    if let Some(sniffed_url) = advanced_webview_sniffer(app_handle, url).await {
+                    if let Some(mut sniffed_url) = advanced_webview_sniffer(app_handle, url).await {
                         log::info!("Tier 3: Found sniffed URL: {}. Extracting metadata...", sniffed_url);
 
-                        let is_direct_media = sniffed_url.contains(".m3u8")
+                        if let Some(canonical) = extract_dailymotion_canonical_url(&sniffed_url) {
+                            log::info!("Tier 3: Normalized Dailymotion sniffed URL to canonical: {}", canonical);
+                            sniffed_url = canonical;
+                        }
+
+                        let is_direct_media = (sniffed_url.contains(".m3u8")
                             || sniffed_url.contains(".mp4")
-                            || sniffed_url.contains(".ts");
+                            || sniffed_url.contains(".ts"))
+                            && !sniffed_url.contains("dailymotion.com");
 
                         if is_direct_media {
                             let title = infer_title_from_url(url);
@@ -218,7 +230,11 @@ impl YtDlpRunner {
                             if let Some(first) = json_lines.into_iter().next() {
                                 if let Ok(mut meta) = parse_preview_metadata(&first, &sniffed_url) {
                                     meta.url = url.to_string();
-                                    meta.stream_url = Some(sniffed_url.clone());
+                                    if sniffed_url.contains("dailymotion.com/video/") {
+                                        meta.stream_url = None;
+                                    } else {
+                                        meta.stream_url = Some(sniffed_url.clone());
+                                    }
                                     return Ok(meta);
                                 }
                             }
