@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.55](https://github.com/Orlixis/downlink/compare/v0.1.54...v0.1.55) (2026-08-22)
+
+
+### Features
+
+* add Safari and Firefox browser extensions and implement cross-browser version synchronization ([d59ae36](https://github.com/Orlixis/downlink/commit/d59ae36bf41865d872223735faf6b90390de4651))
+
 ### [0.1.54](https://github.com/Orlixis/downlink/compare/v0.1.53...v0.1.54) (2026-08-22)
 
 
