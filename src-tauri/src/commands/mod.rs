@@ -20,8 +20,10 @@ pub use self::settings::{
     save_window_state,
 };
 pub use self::system::{
-    check_app_update, extract_urls_from_text, get_app_data_dir, get_app_version,
-    install_app_update, open_file, open_folder, restart_app, set_window_title,
+    check_app_update, detect_installed_browsers, extract_urls_from_text, get_app_data_dir,
+    get_app_version, get_extension_folder_path, install_app_update,
+    launch_browser_extension_installer, open_file, open_folder, restart_app, set_window_title,
+    DetectedBrowser,
 };
 pub use self::tools::{
     check_for_updates, check_whisper, get_toolchain_status, transcribe_file, update_tool,

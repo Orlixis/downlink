@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Info } from "lucide-react";
 import type { QueueItem } from "@/app/types";
 
 interface DownloadItemDiagnosticsProps {
@@ -74,7 +74,7 @@ export function DownloadItemDiagnostics({ item }: DownloadItemDiagnosticsProps) 
     <div className="mt-2 rounded-xl bg-red-950/40 p-2.5 ring-1 ring-red-500/20 animate-fade-in space-y-2">
       {tip && (
         <div className="flex items-start gap-1.5 text-[10px] text-amber-300/90 bg-amber-500/10 p-2 rounded-lg ring-1 ring-amber-500/15">
-          <span className="shrink-0">💡</span>
+          <Info className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
           <span>{tip}</span>
         </div>
       )}

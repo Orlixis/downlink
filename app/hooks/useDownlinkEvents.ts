@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DownlinkEvent, QueueItem } from "@/app/types";
 import type { UpdateAvailableState } from "./useDownlinkActions";
+import { toast } from "@/app/components/Toast";
 
 const DOWNLINK_EVENT_NAME = "downlink://event";
 
@@ -232,6 +233,21 @@ export function useDownlinkEvents({
             total: eventPayload.payload.total,
           },
         }));
+      }
+    }).then((unlisten) => {
+      if (isMounted) {
+        unlistenRefs.current.push(unlisten);
+      } else {
+        unlisten();
+      }
+    });
+
+    // Browser Extension link captured stream
+    listen<{ id: string; url: string; title?: string }>("browser-link-captured", (e) => {
+      if (isMounted) {
+        refreshQueue();
+        const label = e.payload?.title || "Video Stream";
+        toast.success(`Captured: ${label}`);
       }
     }).then((unlisten) => {
       if (isMounted) {

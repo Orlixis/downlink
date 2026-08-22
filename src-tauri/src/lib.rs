@@ -10,6 +10,7 @@ pub mod commands;
 pub mod db;
 pub mod download_manager;
 pub mod events;
+pub mod gateway;
 pub mod models;
 pub mod settings;
 pub mod tool_manager;
@@ -332,6 +333,7 @@ pub fn run() {
             emit_app_ready(&app.handle(), None, None);
 
             download_manager::janitor::start_janitor_service(app.handle().clone());
+            gateway::start_gateway_server(app.handle().clone());
 
             Ok(())
         })
@@ -383,6 +385,9 @@ pub fn run() {
             commands::settings::get_default_download_dir,
             commands::system::open_file,
             commands::system::open_folder,
+            commands::system::get_extension_folder_path,
+            commands::system::detect_installed_browsers,
+            commands::system::launch_browser_extension_installer,
             // App updates
             commands::system::check_app_update,
             commands::system::install_app_update,

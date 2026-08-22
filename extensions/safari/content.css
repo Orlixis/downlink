@@ -1,0 +1,304 @@
+/* ==========================================================================
+   Downlink Companion — Apple-tier Liquid Glass Floating Pill & Quick Modal
+   ========================================================================== */
+
+.downlink-floating-root {
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  z-index: 2147483647 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif !important;
+  user-select: none !important;
+  pointer-events: auto !important;
+  opacity: 0.94;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s ease;
+}
+
+.downlink-floating-root:hover {
+  opacity: 1 !important;
+  transform: translateY(-1px) scale(1.03);
+}
+
+/* Liquid Glass Floating Pill */
+.downlink-glass-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px 12px 6px 8px !important;
+  background: rgba(13, 17, 23, 0.85) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.4) !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55),
+              0 0 16px rgba(56, 189, 248, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.downlink-glass-pill:hover {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border-color: rgba(56, 189, 248, 0.8) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7),
+              0 0 24px rgba(56, 189, 248, 0.38),
+              inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+.downlink-glass-pill:active {
+  transform: scale(0.97) !important;
+}
+
+/* Brand Section */
+.downlink-pill-brand {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.downlink-pill-logo {
+  width: 18px !important;
+  height: 18px !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.downlink-pill-title {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.2px !important;
+  color: #f8fafc !important;
+  line-height: 1 !important;
+}
+
+/* Action Trigger */
+.downlink-pill-action {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  background: rgba(56, 189, 248, 0.18) !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  padding: 3px 8px !important;
+  border-radius: 9999px !important;
+  color: #38bdf8 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  transition: all 0.15s ease !important;
+}
+
+.downlink-glass-pill:hover .downlink-pill-action {
+  background: rgba(56, 189, 248, 0.32) !important;
+  border-color: rgba(56, 189, 248, 0.7) !important;
+  color: #ffffff !important;
+}
+
+.downlink-chevron-svg {
+  width: 10px !important;
+  height: 10px !important;
+  transition: transform 0.2s ease !important;
+}
+
+.downlink-floating-root.captured .downlink-glass-pill {
+  background: rgba(6, 78, 59, 0.92) !important;
+  border-color: rgba(52, 211, 153, 0.8) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(52, 211, 153, 0.35) !important;
+}
+
+.downlink-floating-root.captured .downlink-pill-action {
+  background: rgba(52, 211, 153, 0.3) !important;
+  border-color: rgba(52, 211, 153, 0.6) !important;
+  color: #34d399 !important;
+}
+
+/* Quick Modal Dropdown */
+.downlink-quick-modal {
+  position: absolute !important;
+  top: calc(100% + 8px) !important;
+  right: 0 !important;
+  width: 260px !important;
+  padding: 12px !important;
+  background: rgba(15, 23, 42, 0.94) !important;
+  backdrop-filter: blur(28px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75),
+              0 0 24px rgba(56, 189, 248, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transform: translateY(-8px) scale(0.95) !important;
+  transform-origin: top right !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  pointer-events: none !important;
+}
+
+.downlink-quick-modal.open {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateY(0) scale(1) !important;
+  pointer-events: auto !important;
+}
+
+/* Modal Header */
+.downlink-modal-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding-bottom: 6px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.downlink-modal-brand {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+}
+
+.downlink-modal-logo {
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 6px !important;
+  object-fit: cover !important;
+}
+
+.downlink-modal-title {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  line-height: 1.2 !important;
+}
+
+.downlink-modal-subtitle {
+  font-size: 9.5px !important;
+  color: #94a3b8 !important;
+  font-weight: 500 !important;
+}
+
+.downlink-modal-close {
+  background: transparent !important;
+  border: none !important;
+  color: #94a3b8 !important;
+  font-size: 16px !important;
+  cursor: pointer !important;
+  padding: 0 4px !important;
+  line-height: 1 !important;
+  transition: color 0.15s ease !important;
+}
+
+.downlink-modal-close:hover {
+  color: #ffffff !important;
+}
+
+/* Preset Options */
+.downlink-modal-options {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+}
+
+.downlink-opt-btn {
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  padding: 7px 9px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 10px !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  transition: all 0.15s ease !important;
+}
+
+.downlink-opt-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+
+.downlink-opt-btn.active {
+  background: rgba(56, 189, 248, 0.18) !important;
+  border-color: rgba(56, 189, 248, 0.65) !important;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.22) !important;
+}
+
+.downlink-opt-icon {
+  width: 22px !important;
+  height: 22px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  border-radius: 6px !important;
+  color: #38bdf8 !important;
+  flex-shrink: 0 !important;
+}
+
+.downlink-opt-btn.active .downlink-opt-icon {
+  color: #ffffff !important;
+  background: rgba(56, 189, 248, 0.45) !important;
+}
+
+.downlink-opt-info {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.downlink-opt-name {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #f1f5f9 !important;
+  line-height: 1.2 !important;
+}
+
+.downlink-opt-desc {
+  font-size: 9.5px !important;
+  color: #94a3b8 !important;
+}
+
+.downlink-modal-submit {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  width: 100% !important;
+  padding: 8px !important;
+  background: linear-gradient(135deg, #0284c7, #2563eb) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 10px !important;
+  color: #ffffff !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35) !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.downlink-modal-submit:hover {
+  background: linear-gradient(135deg, #0369a1, #1d4ed8) !important;
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.5) !important;
+  transform: translateY(-1px) !important;
+}
+
+.downlink-modal-submit:active {
+  transform: scale(0.98) !important;
+}
+
+/* Icons */
+.downlink-pill-svg,
+.downlink-zap-svg,
+.downlink-music-svg,
+.downlink-video-svg,
+.downlink-check-svg {
+  width: 13px !important;
+  height: 13px !important;
+}

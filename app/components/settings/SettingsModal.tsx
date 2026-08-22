@@ -12,6 +12,7 @@ import {
   Save,
   Loader2,
   Mic,
+  Puzzle,
 } from "lucide-react";
 import type { UserSettings, AppUpdateInfo } from "@/app/types";
 import { useModalAnimation } from "@/app/hooks/useModalAnimation";
@@ -23,6 +24,7 @@ import {
   UpdatesTab,
   NetworkTab,
   TranscriptionTab,
+  BrowserTab,
 } from "./tabs";
 
 type TabId =
@@ -32,7 +34,8 @@ type TabId =
   | "subtitles"
   | "updates"
   | "network"
-  | "transcription";
+  | "transcription"
+  | "browser";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -51,6 +54,7 @@ const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: 
   { id: "formats", label: "Formats", icon: FileVideo },
   { id: "sponsorblock", label: "SponsorBlock", icon: Scissors },
   { id: "subtitles", label: "Subtitles", icon: Subtitles },
+  { id: "browser", label: "Browser Extension", icon: Puzzle },
   { id: "updates", label: "Updates", icon: RefreshCw },
   { id: "network", label: "Network", icon: Globe },
   { id: "transcription", label: "Transcription", icon: Mic },
@@ -310,6 +314,8 @@ export function SettingsModal({
                 updateTranscription={updateTranscription}
               />
             )}
+
+            {activeTab === "browser" && <BrowserTab />}
           </div>
         </div>
 

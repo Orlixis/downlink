@@ -21,7 +21,8 @@ pub use self::metadata::{
     parse_preview_metadata, parse_quality_options,
 };
 pub use self::sniffer::{
-    advanced_webview_sniffer, extract_dailymotion_canonical_url, fallback_iframe_sniffer,
+    advanced_webview_sniffer, clean_media_url, extract_dailymotion_canonical_url,
+    fallback_iframe_sniffer, is_native_platform_url,
 };
 pub use self::types::{
     PlaylistEntry, PreviewMetadata, VideoQualityOption, YtDlpConfig, YtDlpError, YtDlpErrorKind,

@@ -18,6 +18,19 @@ use super::progress::{parse_bytes, parse_eta, parse_percent, parse_speed};
 use super::types::{DownloadConfig, DownloadError, ParsedProgress, Preset};
 use crate::events::{DownlinkEvent, DownloadStatus, ErrorCode, Phase, Progress};
 
+/// Returns `true` if the stderr output indicates a rate-limit or anti-bot
+/// throttle that can be mitigated by reducing concurrency.
+fn is_throttle_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("http error 403")
+        || lower.contains("403 forbidden")
+        || lower.contains("http error 429")
+        || lower.contains("429 too many requests")
+        || lower.contains("rate limit")
+        || lower.contains("rate-limit")
+        || lower.contains("throttl")
+}
+
 pub async fn execute_download(
     id: Uuid,
     url: &str,
@@ -29,6 +42,25 @@ pub async fn execute_download(
     mut cancel_rx: broadcast::Receiver<()>,
     event_tx: mpsc::Sender<DownlinkEvent>,
     resumable: bool,
+) -> std::result::Result<Option<String>, DownloadError> {
+    execute_download_inner(
+        id, url, referer, custom_title, preset_id, output_dir,
+        config, &mut cancel_rx, event_tx, resumable, false,
+    ).await
+}
+
+async fn execute_download_inner(
+    id: Uuid,
+    url: &str,
+    referer: Option<&str>,
+    custom_title: Option<&str>,
+    preset_id: &str,
+    output_dir: &str,
+    config: Arc<RwLock<DownloadConfig>>,
+    cancel_rx: &mut broadcast::Receiver<()>,
+    event_tx: mpsc::Sender<DownlinkEvent>,
+    resumable: bool,
+    throttled: bool,
 ) -> std::result::Result<Option<String>, DownloadError> {
     let wants_subtitles = preset_id.contains("+subs");
     let wants_sponsorblock = preset_id.contains("+sb");
@@ -130,17 +162,42 @@ pub async fn execute_download(
         "--trim-filenames".to_string(),
         "160".to_string(),
         "--windows-filenames".to_string(),
-        "--concurrent-fragments".to_string(),
-        "16".to_string(),
+        "--retries".to_string(),
+        "10".to_string(),
+        "--fragment-retries".to_string(),
+        "10".to_string(),
         "--user-agent".to_string(),
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36".to_string(),
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".to_string(),
     ];
 
-    if let Some(ref_url) = referer {
-        if !ref_url.trim().is_empty() {
-            args.push("--referer".to_string());
-            args.push(ref_url.to_string());
-        }
+    // YouTube-specific: sequential fragments + web player client to avoid throttled URLs.
+    // Other sites get full 16-fragment parallelism.
+    let is_youtube = url.contains("youtube.com") || url.contains("youtu.be");
+    if is_youtube {
+        let frag_count = if throttled { "1" } else { "4" };
+        args.extend([
+            "--concurrent-fragments".to_string(),
+            frag_count.to_string(),
+            "--extractor-args".to_string(),
+            "youtube:player_client=web,default".to_string(),
+        ]);
+        log::info!("Download {} — YouTube mode: {} fragments, web player client", id, frag_count);
+    } else {
+        let frag_count = if throttled { "4" } else { "16" };
+        args.extend([
+            "--concurrent-fragments".to_string(),
+            frag_count.to_string(),
+        ]);
+    }
+
+    if throttled {
+        args.extend([
+            "--retry-sleep".to_string(),
+            "exp=1:10:2".to_string(),
+            "--sleep-requests".to_string(),
+            "0.5".to_string(),
+        ]);
+        log::info!("Download {} — throttled mode: exponential backoff", id);
     }
 
     args.extend(preset.yt_dlp_args.clone());
@@ -194,11 +251,47 @@ pub async fn execute_download(
         args.push(ffmpeg_path.to_string_lossy().to_string());
     }
 
-    let target_exec_url = crate::ytdlp::extract_dailymotion_canonical_url(url).unwrap_or_else(|| url.to_string());
+    let mut effective_url = url.to_string();
+    // Self-heal blob URLs if referer or stripped URL is available
+    if effective_url.starts_with("blob:") {
+        if let Some(ref_url) = referer {
+            if !ref_url.trim().is_empty() && !ref_url.starts_with("blob:") {
+                effective_url = ref_url.to_string();
+            } else {
+                effective_url = effective_url.trim_start_matches("blob:").to_string();
+            }
+        } else {
+            effective_url = effective_url.trim_start_matches("blob:").to_string();
+        }
+    }
+
+    let cleaned_url = crate::ytdlp::clean_media_url(&effective_url);
+
+    let target_exec_url = if let Some(canonical) = crate::ytdlp::extract_dailymotion_canonical_url(&cleaned_url) {
+        canonical
+    } else if let Some(sniffed) = crate::ytdlp::fallback_iframe_sniffer(&cleaned_url).await {
+        log::info!("Pre-execution sniffer resolved {} -> {}", cleaned_url, sniffed);
+        sniffed
+    } else {
+        cleaned_url
+    };
+
+    if target_exec_url.contains("dailymotion.com") {
+        args.push("--referer".to_string());
+        args.push("https://www.dailymotion.com/".to_string());
+    } else if let Some(ref_url) = referer {
+        if !ref_url.trim().is_empty() {
+            args.push("--referer".to_string());
+            args.push(ref_url.to_string());
+        }
+    }
+    let yt_dlp_bin = config_guard.yt_dlp_path.clone();
+    drop(config_guard); // Release read lock so `config` can be moved on retry
+
     args.push(target_exec_url);
     log::info!("Starting download {} with args: {:?}", id, args);
 
-    let mut cmd = Command::new(&config_guard.yt_dlp_path);
+    let mut cmd = Command::new(&yt_dlp_bin);
     cmd.args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -482,6 +575,34 @@ pub async fn execute_download(
     if !status.success() {
         let stderr_text = stderr_lines.join("\n");
         let (code, message, actions) = classify_error(&stderr_text);
+
+        // Auto-retry with throttled concurrency on rate-limit / 403 errors
+        if !throttled && is_throttle_error(&stderr_text) {
+            log::warn!("Download {} — detected rate-limit/403, retrying with throttled concurrency", id);
+            let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+            let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+            let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                id,
+                status: DownloadStatus::Downloading,
+                progress: Progress {
+                    percent: Some(0.0),
+                    bytes_downloaded: None,
+                    bytes_total: None,
+                    speed_bps: None,
+                    eta_seconds: None,
+                    phase: Some(Phase {
+                        name: "Retrying (anti-throttle)...".to_string(),
+                        detail: None,
+                    }),
+                },
+            }).await;
+
+            return Box::pin(execute_download_inner(
+                id, url, referer, custom_title, preset_id, output_dir,
+                config, cancel_rx, event_tx, resumable, true,
+            )).await;
+        }
 
         if url.contains(".m3u8") || url.contains(".mp4") {
             log::warn!("Tier 4 Bypass: yt-dlp failed, falling back to raw ffmpeg bypass for {}", url);

@@ -42,13 +42,59 @@ pub fn extract_dailymotion_canonical_url(text_or_url: &str) -> Option<String> {
     None
 }
 
+/// Returns true if the URL points directly to a platform with native yt-dlp extractor support.
+pub fn is_native_platform_url(url: &str) -> bool {
+    let lower = url.to_lowercase();
+    lower.contains("youtube.com") || lower.contains("youtu.be") ||
+    lower.contains("vimeo.com") || lower.contains("twitch.tv") ||
+    lower.contains("tiktok.com") || lower.contains("twitter.com") || lower.contains("x.com") ||
+    lower.contains("instagram.com") || lower.contains("dailymotion.com/video") ||
+    lower.contains("soundcloud.com") || lower.contains("bilibili.com/video") ||
+    lower.contains("reddit.com")
+}
+
+/// Cleans media URLs — strips playlist/radio noise from YouTube watch URLs:
+/// - `list=RD...` (auto-mix playlists)
+/// - `index=` (position in playlist, meaningless with --no-playlist)
+/// - `start_radio=` (radio session param)
+pub fn clean_media_url(url: &str) -> String {
+    let trimmed = url.trim();
+    let is_youtube = trimmed.contains("youtube.com/watch") || trimmed.contains("youtu.be/");
+    if !is_youtube {
+        return trimmed.to_string();
+    }
+
+    let needs_cleaning = trimmed.contains("list=RD")
+        || trimmed.contains("index=")
+        || trimmed.contains("start_radio=");
+
+    if !needs_cleaning {
+        return trimmed.to_string();
+    }
+
+    if let Ok(mut parsed) = url::Url::parse(trimmed) {
+        let clean_pairs: Vec<(String, String)> = parsed.query_pairs()
+            .filter(|(k, v)| {
+                if k == "list" && v.starts_with("RD") { return false; }
+                if k == "index" { return false; }
+                if k == "start_radio" { return false; }
+                true
+            })
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        parsed.query_pairs_mut().clear().extend_pairs(clean_pairs);
+        return parsed.to_string();
+    }
+    trimmed.to_string()
+}
+
 pub async fn fallback_iframe_sniffer(url: &str) -> Option<String> {
-    if !url.starts_with("http") {
+    if !url.starts_with("http") || is_native_platform_url(url) {
         return None;
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .timeout(Duration::from_secs(6))
         .build()
         .ok()?;

@@ -1,0 +1,33 @@
+{
+  "packageFiles": [
+    {
+      "filename": "package.json",
+      "type": "json"
+    }
+  ],
+  "bumpFiles": [
+    {
+      "filename": "package.json",
+      "type": "json"
+    },
+    {
+      "filename": "src-tauri/tauri.conf.json",
+      "type": "json"
+    },
+    {
+      "filename": "extensions/chrome/manifest.json",
+      "type": "json"
+    },
+    {
+      "filename": "extensions/firefox/manifest.json",
+      "type": "json"
+    },
+    {
+      "filename": "extensions/safari/manifest.json",
+      "type": "json"
+    }
+  ],
+  "scripts": {
+    "postbump": "node scripts/sync-extension-versions.js"
+  }
+}
