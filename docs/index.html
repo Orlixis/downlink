@@ -554,10 +554,10 @@
     <main>
         <section class="hero">
             <div class="container">
-                <div class="hero-badge" id="version-badge">Version <span id="latest-version">0.1.1</span> Available
+                <div class="hero-badge" id="version-badge">Version <span id="latest-version">0.1.55</span> Available
                 </div>
                 <h1>Download videos<br><span>from anywhere</span></h1>
-                <p>A fast, lightweight desktop app</p> for downloading videos from YouTube and 1000+ websites. Powered
+                <p>A fast, lightweight desktop app for downloading videos from YouTube and 1000+ websites. Powered
                 by yt-dlp with a beautiful, intuitive interface.</p>
                 <div class="hero-actions">
                     <a href="#downloads" class="btn btn-primary">
@@ -594,13 +594,13 @@
                         <p class="subtitle">macOS 10.15 or later</p>
                         <!-- Chip badge — updated by JS after architecture detection -->
                         <div id="macos-chip-badge" style="display:none;margin-bottom:10px;font-size:0.75rem;font-weight:600;letter-spacing:0.04em;padding:4px 10px;border-radius:999px;width:fit-content;margin-left:auto;margin-right:auto;"></div>
-                        <a id="macos-download-btn" href="https://github.com/Orlixis/downlink/releases/latest"
+                        <a id="macos-download-btn" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_aarch64.dmg"
                             class="btn btn-primary">
                             Download .dmg
                         </a>
                         <div class="alt-downloads">
-                            <a id="macos-arm-link" href="https://github.com/Orlixis/downlink/releases/latest">Apple Silicon (.dmg)</a>
-                            <a id="macos-intel-link" href="https://github.com/Orlixis/downlink/releases/latest">Intel (.dmg)</a>
+                            <a id="macos-arm-link" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_aarch64.dmg">Apple Silicon (.dmg)</a>
+                            <a id="macos-intel-link" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_x64.dmg">Intel (.dmg)</a>
                         </div>
                     </div>
 
@@ -613,14 +613,14 @@
                         </div>
                         <h3>Windows</h3>
                         <p class="subtitle">Windows 10 or later</p>
-                        <a id="windows-download-btn" href="https://github.com/Orlixis/downlink/releases/latest"
+                        <a id="windows-download-btn" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_x64-setup.exe"
                             class="btn btn-primary">
                             Download .exe
                         </a>
                         <div class="alt-downloads">
-                            <a id="windows-exe-link" href="https://github.com/Orlixis/downlink/releases/latest">.exe
+                            <a id="windows-exe-link" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_x64-setup.exe">.exe
                                 Installer</a>
-                            <a id="windows-msi-link" href="https://github.com/Orlixis/downlink/releases/latest">.msi
+                            <a id="windows-msi-link" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_x64_en-US.msi">.msi
                                 Package</a>
                         </div>
                     </div>
@@ -634,15 +634,15 @@
                         </div>
                         <h3>Linux</h3>
                         <p class="subtitle">Ubuntu, Fedora, Arch</p>
-                        <a id="linux-download-btn" href="https://github.com/Orlixis/downlink/releases/latest"
+                        <a id="linux-download-btn" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_amd64.AppImage"
                             class="btn btn-primary">
                             Download AppImage
                         </a>
                         <div class="alt-downloads">
-                            <a id="linux-deb-link" href="https://github.com/Orlixis/downlink/releases/latest">.deb</a>
-                            <a id="linux-rpm-link" href="https://github.com/Orlixis/downlink/releases/latest">.rpm</a>
+                            <a id="linux-deb-link" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_amd64.deb">.deb</a>
+                            <a id="linux-rpm-link" href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink-0.1.55-1.x86_64.rpm">.rpm</a>
                             <a id="linux-appimage-link"
-                                href="https://github.com/Orlixis/downlink/releases/latest">AppImage</a>
+                                href="https://github.com/Orlixis/downlink/releases/download/v0.1.55/Downlink_0.1.55_amd64.AppImage">AppImage</a>
                         </div>
                     </div>
                 </div>
@@ -765,20 +765,23 @@
     </footer>
 
     <script>
-        // Fetch latest release info from the repository's latest.json to avoid GitHub API rate limits
-        const LATEST_JSON_URL = 'https://raw.githubusercontent.com/Orlixis/downlink/main/latest.json';
+        const GITHUB_API_LATEST = 'https://api.github.com/repos/Orlixis/downlink/releases/latest';
 
         async function fetchLatestRelease() {
             try {
-                // Add a cache-buster so we don't get a stale latest.json
-                const response = await fetch(LATEST_JSON_URL + '?t=' + new Date().getTime());
+                const response = await fetch(GITHUB_API_LATEST);
                 if (!response.ok) {
-                    console.warn('Failed to fetch latest.json:', response.status);
+                    console.warn('GitHub API responded with status:', response.status);
                     return null;
                 }
-                return await response.json();
+                const data = await response.json();
+                const version = (data.tag_name || '').replace(/^v/, '');
+                return {
+                    version,
+                    assets: data.assets || []
+                };
             } catch (error) {
-                console.warn('Error fetching release:', error);
+                console.warn('Error fetching release from GitHub API:', error);
                 return null;
             }
         }
@@ -786,9 +789,8 @@
         // Update the page with latest release info
         async function updateReleaseInfo() {
             const data = await fetchLatestRelease();
-            if (!data || !data.version) return;
-
-            const version = data.version;
+            const version = (data && data.version) ? data.version : '0.1.55';
+            const assets = (data && data.assets) ? data.assets : [];
 
             // Update version badge
             const versionSpan = document.getElementById('latest-version');
@@ -796,18 +798,22 @@
                 versionSpan.textContent = version;
             }
 
-            // Construct URLs manually based on Tauri's default naming conventions
+            const findAsset = (pattern) => {
+                const match = assets.find(a => pattern.test(a.name) && !a.name.endsWith('.sig'));
+                return match ? match.browser_download_url : null;
+            };
+
             const baseUrl = `https://github.com/Orlixis/downlink/releases/download/v${version}`;
-            
-            const macosArmUrl = `${baseUrl}/Downlink_aarch64.dmg`;
-            const macosIntelUrl = `${baseUrl}/Downlink_x64.dmg`;
-            
-            const windowsExeUrl = `${baseUrl}/Downlink_${version}_x64-setup.exe`;
-            const windowsMsiUrl = `${baseUrl}/Downlink_${version}_x64_en-US.msi`;
-            
-            const linuxAppImageUrl = `${baseUrl}/Downlink_${version}_amd64.AppImage`;
-            const linuxDebUrl = `${baseUrl}/downlink_${version}_amd64.deb`;
-            const linuxRpmUrl = `${baseUrl}/downlink-${version}-1.x86_64.rpm`;
+
+            const macosArmUrl = findAsset(/aarch64.*\.dmg$/i) || `${baseUrl}/Downlink_${version}_aarch64.dmg`;
+            const macosIntelUrl = findAsset(/x64.*\.dmg$/i) || `${baseUrl}/Downlink_${version}_x64.dmg`;
+
+            const windowsExeUrl = findAsset(/x64-setup\.exe$/i) || findAsset(/\.exe$/i) || `${baseUrl}/Downlink_${version}_x64-setup.exe`;
+            const windowsMsiUrl = findAsset(/\.msi$/i) || `${baseUrl}/Downlink_${version}_x64_en-US.msi`;
+
+            const linuxAppImageUrl = findAsset(/\.AppImage$/i) || `${baseUrl}/Downlink_${version}_amd64.AppImage`;
+            const linuxDebUrl = findAsset(/\.deb$/i) || `${baseUrl}/Downlink_${version}_amd64.deb`;
+            const linuxRpmUrl = findAsset(/\.rpm$/i) || `${baseUrl}/Downlink-${version}-1.x86_64.rpm`;
 
             const macosDownloadBtn = document.getElementById('macos-download-btn');
             const macosArmLink = document.getElementById('macos-arm-link');
@@ -866,7 +872,6 @@
             const linuxAppImageLink = document.getElementById('linux-appimage-link');
             const linuxDebLink = document.getElementById('linux-deb-link');
             const linuxRpmLink = document.getElementById('linux-rpm-link');
-            const androidCard = document.getElementById('android-card');
 
             if (linuxDownloadBtn) linuxDownloadBtn.href = linuxAppImageUrl;
             if (linuxAppImageLink) linuxAppImageLink.href = linuxAppImageUrl;

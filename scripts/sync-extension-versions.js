@@ -48,7 +48,27 @@ manifestPaths.forEach((manifestPath) => {
   }
 });
 
+// Sync docs/index.html version
+const docsIndexPath = path.join(rootDir, 'docs', 'index.html');
+if (fs.existsSync(docsIndexPath)) {
+  try {
+    let docsHtml = fs.readFileSync(docsIndexPath, 'utf8');
+    const updatedHtml = docsHtml
+      .replace(/<span id="latest-version">[^<]+<\/span>/g, `<span id="latest-version">${version}</span>`)
+      .replace(/releases\/download\/v[0-9\.]+\/Downlink_[0-9\.]+/g, `releases/download/v${version}/Downlink_${version}`)
+      .replace(/releases\/download\/v[0-9\.]+\/downlink_[0-9\.]+/g, `releases/download/v${version}/Downlink_${version}`)
+      .replace(/releases\/download\/v[0-9\.]+\/Downlink-[0-9\.]+-1/g, `releases/download/v${version}/Downlink-${version}-1`);
+
+    if (updatedHtml !== docsHtml) {
+      fs.writeFileSync(docsIndexPath, updatedHtml, 'utf8');
+      console.log(`[sync-versions] Updated docs/index.html -> v${version}`);
+      updatedCount++;
+    }
+  } catch (err) {
+    console.error('[sync-versions] Failed to update docs/index.html:', err);
+  }
+}
+
 if (updatedCount === 0) {
-  // Silent or verbose confirmation
-  // console.log(`[sync-versions] All extension manifests are in sync (v${version})`);
+  // console.log(`[sync-versions] All extension manifests and docs are in sync (v${version})`);
 }
