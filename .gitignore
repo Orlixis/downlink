@@ -60,3 +60,5 @@ temp_interactive_push.bat
 tauri.key.pub
 tauri.key
 *.lock
+src-tauri/Cargo.lock
+latest.json

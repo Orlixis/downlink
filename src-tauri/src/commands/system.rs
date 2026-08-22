@@ -172,6 +172,7 @@ pub async fn check_app_update(app: AppHandle) -> Result<AppUpdateInfo, String> {
 
 #[tauri::command]
 pub async fn install_app_update(app: AppHandle) -> Result<(), String> {
+    use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
 
     let updater = app
@@ -189,17 +190,24 @@ pub async fn install_app_update(app: AppHandle) -> Result<(), String> {
         update.version
     );
 
-    let mut downloaded = 0;
-    let mut total = 0;
+    let mut downloaded: u64 = 0;
 
+    let app_clone = app.clone();
     update
         .download_and_install(
-            |chunk_length, content_length| {
-                downloaded += chunk_length;
-                total = content_length.unwrap_or(0);
+            move |chunk_length, content_length| {
+                downloaded += chunk_length as u64;
+                let total = content_length.unwrap_or(0);
+                let _ = app_clone.emit(
+                    "app-update-progress",
+                    serde_json::json!({
+                        "downloaded": downloaded,
+                        "total": total,
+                    }),
+                );
                 log::info!("Downloaded {} of {} bytes", downloaded, total);
             },
-            || {
+            move || {
                 log::info!("Download complete, installing...");
             },
         )

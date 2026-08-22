@@ -139,6 +139,7 @@ export function useDownlink(): UseDownlinkReturn {
     setQueue,
     refreshQueue,
     refreshHistory,
+    setUpdateAvailable,
   });
 
   useEffect(() => {

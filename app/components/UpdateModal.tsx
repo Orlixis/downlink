@@ -129,9 +129,11 @@ export function UpdateModal({
                 ) : downloading ? (
                   <div className="space-y-4 py-4">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium text-white">Downloading update...</span>
+                      <span className="font-medium text-white">
+                        {progressPercent > 0 ? `Downloading update (${progressPercent}%)...` : "Downloading update..."}
+                      </span>
                       <span className="text-zinc-400">
-                        {downloadProgress?.total 
+                        {downloadProgress?.total && downloadProgress.total > 0
                           ? `${formatBytes(downloadProgress.downloaded)} / ${formatBytes(downloadProgress.total)}`
                           : formatBytes(downloadProgress?.downloaded ?? 0)}
                       </span>

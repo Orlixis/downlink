@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DownlinkEvent, QueueItem } from "@/app/types";
+import type { UpdateAvailableState } from "./useDownlinkActions";
 
 const DOWNLINK_EVENT_NAME = "downlink://event";
 
@@ -15,6 +16,7 @@ interface UseDownlinkEventsProps {
   setQueue: React.Dispatch<React.SetStateAction<QueueItem[]>>;
   refreshQueue: () => Promise<void>;
   refreshHistory: () => Promise<void>;
+  setUpdateAvailable?: React.Dispatch<React.SetStateAction<UpdateAvailableState>>;
 }
 
 export function useDownlinkEvents({
@@ -26,8 +28,9 @@ export function useDownlinkEvents({
   setQueue,
   refreshQueue,
   refreshHistory,
+  setUpdateAvailable,
 }: UseDownlinkEventsProps) {
-  const unlistenRef = useRef<UnlistenFn | null>(null);
+  const unlistenRefs = useRef<UnlistenFn[]>([]);
 
   const handleEvent = useCallback(
     (event: DownlinkEvent) => {
@@ -203,13 +206,36 @@ export function useDownlinkEvents({
     if (!isTauri) return;
 
     let isMounted = true;
+    unlistenRefs.current = [];
+
+    // Main Downlink event stream
     listen<DownlinkEvent>(DOWNLINK_EVENT_NAME, (eventPayload) => {
       if (isMounted) {
         handleEvent(eventPayload.payload);
       }
     }).then((unlisten) => {
       if (isMounted) {
-        unlistenRef.current = unlisten;
+        unlistenRefs.current.push(unlisten);
+      } else {
+        unlisten();
+      }
+    });
+
+    // App Update download progress stream
+    listen<{ downloaded: number; total: number }>("app-update-progress", (eventPayload) => {
+      if (isMounted && setUpdateAvailable) {
+        setUpdateAvailable((prev) => ({
+          ...prev,
+          downloading: true,
+          downloadProgress: {
+            downloaded: eventPayload.payload.downloaded,
+            total: eventPayload.payload.total,
+          },
+        }));
+      }
+    }).then((unlisten) => {
+      if (isMounted) {
+        unlistenRefs.current.push(unlisten);
       } else {
         unlisten();
       }
@@ -217,10 +243,8 @@ export function useDownlinkEvents({
 
     return () => {
       isMounted = false;
-      if (unlistenRef.current) {
-        unlistenRef.current();
-        unlistenRef.current = null;
-      }
+      unlistenRefs.current.forEach((unlisten) => unlisten());
+      unlistenRefs.current = [];
     };
-  }, [isTauri, handleEvent]);
+  }, [isTauri, handleEvent, setUpdateAvailable]);
 }
