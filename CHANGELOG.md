@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.57](https://github.com/Orlixis/downlink/compare/v0.1.56...v0.1.57) (2026-08-22)
+
+
+### Features
+
+* bump version to 0.1.56 and add browser extension management components to settings ([b565085](https://github.com/Orlixis/downlink/commit/b565085bbf6b20e1888d51d3fc26f5826a63be2c))
+
 ### [0.1.56](https://github.com/Orlixis/downlink/compare/v0.1.55...v0.1.56) (2026-08-22)
 
 
