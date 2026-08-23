@@ -144,14 +144,48 @@ export function SettingsModal({
       key: K,
       value: UserSettings["sponsorblock"][K]
     ) => {
-      setLocalSettings((prev) =>
-        prev
-          ? { ...prev, sponsorblock: { ...prev.sponsorblock, [key]: value } }
-          : prev
-      );
+      setLocalSettings((prev) => {
+        if (!prev) return prev;
+        const currentSb = prev.sponsorblock || {
+          enabled_by_default: false,
+          mode: "remove",
+          categories: ["sponsor", "intro", "outro", "selfpromo", "interaction"],
+        };
+        return {
+          ...prev,
+          sponsorblock: {
+            ...currentSb,
+            [key]: value,
+          },
+        };
+      });
     },
     []
   );
+
+  const toggleSponsorblockCategory = useCallback((category: string) => {
+    setLocalSettings((prev) => {
+      if (!prev) return prev;
+      const currentSb = prev.sponsorblock || {
+        enabled_by_default: false,
+        mode: "remove",
+        categories: ["sponsor", "intro", "outro", "selfpromo", "interaction"],
+      };
+      const categories = Array.isArray(currentSb.categories)
+        ? currentSb.categories
+        : [];
+      const newCategories = categories.includes(category)
+        ? categories.filter((c) => c !== category)
+        : [...categories, category];
+      return {
+        ...prev,
+        sponsorblock: {
+          ...currentSb,
+          categories: newCategories,
+        },
+      };
+    });
+  }, []);
 
   const updateSubtitles = useCallback(
     <K extends keyof UserSettings["subtitles"]>(
@@ -193,20 +227,6 @@ export function SettingsModal({
     },
     []
   );
-
-  const toggleSponsorblockCategory = useCallback((category: string) => {
-    setLocalSettings((prev) => {
-      if (!prev) return prev;
-      const categories = prev.sponsorblock.categories;
-      const newCategories = categories.includes(category)
-        ? categories.filter((c) => c !== category)
-        : [...categories, category];
-      return {
-        ...prev,
-        sponsorblock: { ...prev.sponsorblock, categories: newCategories },
-      };
-    });
-  }, []);
 
   if (!renderState) return null;
 
