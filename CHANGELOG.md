@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.61](https://github.com/Orlixis/downlink/compare/v0.1.60...v0.1.61) (2026-08-23)
+
+
+### Features
+
+* add automatic torrent/magnet interception to browser extensions and improve peer discovery with public tracker enrichment. ([a3f6c33](https://github.com/Orlixis/downlink/commit/a3f6c3338a5a44a74cc569ef71ce628dd875d1a8))
+
 ### [0.1.60](https://github.com/Orlixis/downlink/compare/v0.1.59...v0.1.60) (2026-08-23)
 
 
