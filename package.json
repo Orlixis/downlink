@@ -7,7 +7,6 @@
     "prebuild": "node scripts/sync-extension-versions.js",
     "dev": "next dev",
     "build": "next build",
-    "postbuild": "node scripts/sync-docs-mobile.js",
     "start": "next start",
     "lint": "eslint",
     "tauri": "tauri",
