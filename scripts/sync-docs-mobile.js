@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Copies the Next.js exported mobile companion PWA from out/mobile.html to docs/mobile/index.html,
- * converts all asset paths to relative paths (for GitHub Pages subpaths),
- * patches Turbopack chunk loaders for dynamic origin/subpath resolution, and syncs _next static assets.
+ * Builds and synchronizes the Next.js Mobile Companion PWA for GitHub Pages
+ * with native basePath support (/downlink).
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
 const outDir = path.join(rootDir, 'out');
@@ -15,108 +15,82 @@ const docsDir = path.join(rootDir, 'docs');
 const docsMobileDir = path.join(docsDir, 'mobile');
 const publicDir = path.join(rootDir, 'public');
 
-// Ensure docs/mobile directory exists
-fs.mkdirSync(docsMobileDir, { recursive: true });
+console.log('[sync-mobile] Building Next.js Mobile Companion for GitHub Pages (/downlink)...');
 
-// 1. Copy out/mobile.html -> docs/mobile/index.html and rewrite all asset paths to relative
-const outMobileHtml = path.join(outDir, 'mobile.html');
-const docsMobileIndex = path.join(docsMobileDir, 'index.html');
+try {
+  // Build with BUILD_FOR_PAGES=true to generate native /downlink asset and chunk paths
+  execSync('bun x next build', {
+    cwd: rootDir,
+    env: { ...process.env, BUILD_FOR_PAGES: 'true' },
+    stdio: 'inherit',
+  });
 
-if (fs.existsSync(outMobileHtml)) {
-  let html = fs.readFileSync(outMobileHtml, 'utf8');
+  // Ensure docs/mobile exists
+  fs.mkdirSync(docsMobileDir, { recursive: true });
 
-  // Replace all occurrences of /_next/ (including inside escaped JSON/RSC payloads like \"/_next/)
-  html = html.replaceAll('/_next/', '../_next/');
-  html = html.replaceAll('/mobile-manifest.json', './mobile-manifest.json');
-  html = html.replaceAll('/downlink-square.png', './downlink-square.png');
-  html = html.replaceAll('/downlink-transparent.png', './downlink-transparent.png');
-  html = html.replaceAll('/downlink.png', './downlink.png');
-  html = html.replaceAll('/downlink.svg', './downlink.svg');
-  html = html.replaceAll('/favicon.ico', '../favicon.ico');
+  // 1. Copy out/mobile.html -> docs/mobile/index.html
+  const outMobileHtml = path.join(outDir, 'mobile.html');
+  const docsMobileIndex = path.join(docsMobileDir, 'index.html');
 
-  fs.writeFileSync(docsMobileIndex, html, 'utf8');
-  console.log('[sync-mobile] Copied & patched out/mobile.html -> docs/mobile/index.html (universal relative assets)');
-}
-
-// 2. Sync _next static chunks to docs/_next for GitHub Pages
-const outNextDir = path.join(outDir, '_next');
-const docsNextDir = path.join(docsDir, '_next');
-
-if (fs.existsSync(outNextDir)) {
-  fs.mkdirSync(docsNextDir, { recursive: true });
-  fs.cpSync(outNextDir, docsNextDir, { recursive: true });
-  console.log('[sync-mobile] Copied out/_next -> docs/_next');
-
-  // Patch all JavaScript chunk loaders (Turbopack) in docs/_next to dynamically resolve their base path
-  function patchJsFiles(dir) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        patchJsFiles(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith('.js')) {
-        let content = fs.readFileSync(fullPath, 'utf8');
-        let modified = false;
-
-        // Dynamic base path replacement for Turbopack runtime
-        if (content.includes('let t="/_next/"')) {
-          content = content.replaceAll(
-            'let t="/_next/"',
-            'let t=(typeof document!=="undefined"&&document.currentScript?.src?.replace(/static\\/chunks\\/.*$/,""))||"../_next/"'
-          );
-          modified = true;
-        }
-
-        if (content.includes('t="/_next/"')) {
-          content = content.replaceAll(
-            't="/_next/"',
-            't=(typeof document!=="undefined"&&document.currentScript?.src?.replace(/static\\/chunks\\/.*$/,""))||"../_next/"'
-          );
-          modified = true;
-        }
-
-        if (modified) {
-          fs.writeFileSync(fullPath, content, 'utf8');
-          console.log(`[sync-mobile] Patched dynamic chunk loader: ${entry.name}`);
-        }
-      }
-    }
+  if (fs.existsSync(outMobileHtml)) {
+    fs.copyFileSync(outMobileHtml, docsMobileIndex);
+    console.log('[sync-mobile] Copied out/mobile.html -> docs/mobile/index.html');
   }
 
-  patchJsFiles(docsNextDir);
-}
+  // 2. Sync _next static assets to docs/_next
+  const outNextDir = path.join(outDir, '_next');
+  const docsNextDir = path.join(docsDir, '_next');
 
-// 3. Ensure docs/.nojekyll exists so GitHub Pages serves _next assets without Jekyll interference
-const nojekyllPath = path.join(docsDir, '.nojekyll');
-if (!fs.existsSync(nojekyllPath)) {
-  fs.writeFileSync(nojekyllPath, '# Prevent GitHub Pages from using Jekyll\n', 'utf8');
-  console.log('[sync-mobile] Created docs/.nojekyll');
-}
-
-// 4. Copy PWA manifest, service worker, and Downlink official PNG icons
-const filesToCopy = [
-  'mobile-sw.js',
-  'mobile-manifest.json',
-  'downlink-square.png',
-  'downlink.png',
-  'downlink-transparent.png',
-  'downlink.svg'
-];
-filesToCopy.forEach((filename) => {
-  const src = path.join(publicDir, filename);
-  if (fs.existsSync(src)) {
-    fs.copyFileSync(src, path.join(docsMobileDir, filename));
-    fs.copyFileSync(src, path.join(docsDir, filename));
+  if (fs.existsSync(outNextDir)) {
+    fs.mkdirSync(docsNextDir, { recursive: true });
+    fs.cpSync(outNextDir, docsNextDir, { recursive: true });
+    console.log('[sync-mobile] Copied out/_next -> docs/_next');
   }
-});
 
-// 5. Remove any Next.js Turbopack .txt flight metadata files in docs/mobile
-if (fs.existsSync(docsMobileDir)) {
-  const entries = fs.readdirSync(docsMobileDir);
-  entries.forEach((entry) => {
-    if (entry.endsWith('.txt')) {
-      fs.unlinkSync(path.join(docsMobileDir, entry));
+  // 3. Ensure docs/.nojekyll exists
+  const nojekyllPath = path.join(docsDir, '.nojekyll');
+  if (!fs.existsSync(nojekyllPath)) {
+    fs.writeFileSync(nojekyllPath, '# Prevent GitHub Pages from using Jekyll\n', 'utf8');
+    console.log('[sync-mobile] Created docs/.nojekyll');
+  }
+
+  // 4. Copy PWA manifest, service worker, and Downlink official PNG icons
+  const filesToCopy = [
+    'mobile-sw.js',
+    'mobile-manifest.json',
+    'downlink-square.png',
+    'downlink.png',
+    'downlink-transparent.png',
+    'downlink.svg',
+  ];
+  filesToCopy.forEach((filename) => {
+    const src = path.join(publicDir, filename);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, path.join(docsMobileDir, filename));
+      fs.copyFileSync(src, path.join(docsDir, filename));
     }
   });
+
+  // 5. Remove any Next.js Turbopack .txt flight metadata files in docs/mobile
+  if (fs.existsSync(docsMobileDir)) {
+    const entries = fs.readdirSync(docsMobileDir);
+    entries.forEach((entry) => {
+      if (entry.endsWith('.txt')) {
+        fs.unlinkSync(path.join(docsMobileDir, entry));
+      }
+    });
+  }
+
+  // 6. Finally, rebuild out/ without basePath so Tauri desktop app build has root paths
+  console.log('[sync-mobile] Rebuilding out/ for Tauri desktop application...');
+  execSync('bun x next build', {
+    cwd: rootDir,
+    env: { ...process.env, BUILD_FOR_PAGES: 'false' },
+    stdio: 'inherit',
+  });
+
+  console.log('[sync-mobile] Successfully synchronized Mobile Companion for GitHub Pages & Tauri desktop!');
+} catch (err) {
+  console.error('[sync-mobile] Error during sync:', err);
+  process.exit(1);
 }
-console.log('[sync-mobile] Cleaned up temporary RSC .txt files in docs/mobile');

@@ -1,11 +1,18 @@
 import type { NextConfig } from "next";
 
+const isPages = process.env.BUILD_FOR_PAGES === "true";
+
 const nextConfig: NextConfig = {
   images: {
-    unoptimized:true
+    unoptimized: true,
   },
-  /* config options here */
   output: "export",
+  ...(isPages
+    ? {
+        basePath: "/downlink",
+        assetPrefix: "/downlink",
+      }
+    : {}),
 };
 
 export default nextConfig;
