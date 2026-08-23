@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.65](https://github.com/Orlixis/downlink/compare/v0.1.64...v0.1.65) (2026-08-23)
+
+
+### Bug Fixes
+
+* **executor:** harden YouTube extraction against SABR HTTP 403 rate-limiting with sequential fragments and mweb fallback ([475e96d](https://github.com/Orlixis/downlink/commit/475e96d284a92892342a9ff33779fe15f92d6553))
+
 ### [0.1.64](https://github.com/Orlixis/downlink/compare/v0.1.63...v0.1.64) (2026-08-23)
 
 ### [0.1.63](https://github.com/Orlixis/downlink/compare/v0.1.62...v0.1.63) (2026-08-23)
