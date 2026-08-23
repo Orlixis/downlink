@@ -2,7 +2,8 @@
 
 /**
  * Copies the Next.js exported mobile companion PWA from out/mobile.html to docs/mobile/index.html,
- * converts all asset paths to relative paths (for GitHub Pages subpaths), and syncs _next static assets.
+ * converts all asset paths to relative paths (for GitHub Pages subpaths),
+ * patches Turbopack chunk loaders for dynamic origin/subpath resolution, and syncs _next static assets.
  */
 
 const fs = require('fs');
@@ -17,21 +18,24 @@ const publicDir = path.join(rootDir, 'public');
 // Ensure docs/mobile directory exists
 fs.mkdirSync(docsMobileDir, { recursive: true });
 
-// 1. Copy out/mobile.html -> docs/mobile/index.html and rewrite absolute paths to relative
+// 1. Copy out/mobile.html -> docs/mobile/index.html and rewrite all asset paths to relative
 const outMobileHtml = path.join(outDir, 'mobile.html');
 const docsMobileIndex = path.join(docsMobileDir, 'index.html');
 
 if (fs.existsSync(outMobileHtml)) {
   let html = fs.readFileSync(outMobileHtml, 'utf8');
 
-  // Replace absolute root /_next/ paths with ../_next/ for GitHub Pages subpath compatibility
-  html = html.replace(/(["'])\/_next\//g, '$1../_next/');
-  html = html.replace(/href=["']\/mobile-manifest\.json["']/g, 'href="./mobile-manifest.json"');
-  html = html.replace(/href=["']\/downlink\.svg["']/g, 'href="./downlink.svg"');
-  html = html.replace(/href=["']\/favicon\.ico([^"']*)["']/g, 'href="../favicon.ico$1"');
+  // Replace all occurrences of /_next/ (including inside escaped JSON/RSC payloads like \"/_next/)
+  html = html.replaceAll('/_next/', '../_next/');
+  html = html.replaceAll('/mobile-manifest.json', './mobile-manifest.json');
+  html = html.replaceAll('/downlink-square.png', './downlink-square.png');
+  html = html.replaceAll('/downlink-transparent.png', './downlink-transparent.png');
+  html = html.replaceAll('/downlink.png', './downlink.png');
+  html = html.replaceAll('/downlink.svg', './downlink.svg');
+  html = html.replaceAll('/favicon.ico', '../favicon.ico');
 
   fs.writeFileSync(docsMobileIndex, html, 'utf8');
-  console.log('[sync-mobile] Copied & patched out/mobile.html -> docs/mobile/index.html (relative assets)');
+  console.log('[sync-mobile] Copied & patched out/mobile.html -> docs/mobile/index.html (universal relative assets)');
 }
 
 // 2. Sync _next static chunks to docs/_next for GitHub Pages
@@ -42,6 +46,44 @@ if (fs.existsSync(outNextDir)) {
   fs.mkdirSync(docsNextDir, { recursive: true });
   fs.cpSync(outNextDir, docsNextDir, { recursive: true });
   console.log('[sync-mobile] Copied out/_next -> docs/_next');
+
+  // Patch all JavaScript chunk loaders (Turbopack) in docs/_next to dynamically resolve their base path
+  function patchJsFiles(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        patchJsFiles(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        let content = fs.readFileSync(fullPath, 'utf8');
+        let modified = false;
+
+        // Dynamic base path replacement for Turbopack runtime
+        if (content.includes('let t="/_next/"')) {
+          content = content.replaceAll(
+            'let t="/_next/"',
+            'let t=(typeof document!=="undefined"&&document.currentScript?.src?.replace(/static\\/chunks\\/.*$/,""))||"../_next/"'
+          );
+          modified = true;
+        }
+
+        if (content.includes('t="/_next/"')) {
+          content = content.replaceAll(
+            't="/_next/"',
+            't=(typeof document!=="undefined"&&document.currentScript?.src?.replace(/static\\/chunks\\/.*$/,""))||"../_next/"'
+          );
+          modified = true;
+        }
+
+        if (modified) {
+          fs.writeFileSync(fullPath, content, 'utf8');
+          console.log(`[sync-mobile] Patched dynamic chunk loader: ${entry.name}`);
+        }
+      }
+    }
+  }
+
+  patchJsFiles(docsNextDir);
 }
 
 // 3. Ensure docs/.nojekyll exists so GitHub Pages serves _next assets without Jekyll interference
