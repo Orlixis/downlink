@@ -108,8 +108,5 @@ pub async fn transcribe_file(
 
     whisper::transcribe(&path, model, user_key.as_deref(), &provider)
         .await
-        .map_err(|e| {
-            let kind = serde_json::to_string(&e.kind).unwrap_or_default();
-            format!("{kind}: {}", e.message)
-        })
+        .map_err(|e| e.message)
 }

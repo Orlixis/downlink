@@ -25,14 +25,20 @@ pub fn resolve_api_config<'a>(
     provider: &TranscriptionProvider,
 ) -> Option<(String, TranscriptionProvider)> {
     if let Some(k) = user_key {
-        let k = k.trim();
+        let k = k.trim().trim_matches('"').trim_matches('\'');
         if !k.is_empty() {
             return Some((k.to_string(), provider.clone()));
         }
     }
-    let bundled = bundled_groq_key().trim();
+    let bundled = bundled_groq_key().trim().trim_matches('"').trim_matches('\'');
     if !bundled.is_empty() {
         return Some((bundled.to_string(), TranscriptionProvider::Groq));
+    }
+    if let Ok(runtime_key) = std::env::var("DOWNLINK_GROQ_KEY") {
+        let k = runtime_key.trim().trim_matches('"').trim_matches('\'');
+        if !k.is_empty() {
+            return Some((k.to_string(), TranscriptionProvider::Groq));
+        }
     }
     None
 }
@@ -130,6 +136,6 @@ pub async fn transcribe(
 
     Err(TranscriptionError {
         kind: TranscriptionErrorKind::TranscriptionFailed,
-        message: "Transcription unavailable".to_string(),
+        message: "No transcription API key configured. Please enter a free Groq or OpenAI/Deepgram API key in Preferences → Transcription, or install local whisper.".to_string(),
     })
 }
