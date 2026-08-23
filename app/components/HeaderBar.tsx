@@ -68,16 +68,31 @@ export function HeaderBar({
       />
       
       <div className="relative flex items-start gap-2.5 pr-3 pl-[80px] py-3 pointer-events-none">
-        {/* Logo */}
+        {/* Logo (Clickable to Web Home) */}
         <div className="flex-shrink-0 pt-0.5 pointer-events-auto">
-          <Image
-            src="/downlink-square.png"
-            alt="Downlink"
-            width={28}
-            height={28}
-            className="rounded-md"
-            priority
-          />
+          <button
+            type="button"
+            onClick={async () => {
+              const webUrl = "https://downlink-web.vercel.app";
+              try {
+                const { invoke } = await import("@tauri-apps/api/core");
+                await invoke("open_url", { url: webUrl });
+              } catch {
+                window.open(webUrl, "_blank");
+              }
+            }}
+            title="Visit Downlink Website (https://downlink-web.vercel.app)"
+            className="group rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 active:scale-95 transition-all"
+          >
+            <Image
+              src="/downlink-square.png"
+              alt="Downlink"
+              width={28}
+              height={28}
+              className="rounded-md shadow-sm group-hover:scale-105 group-hover:shadow-cyan-500/20 transition-all"
+              priority
+            />
+          </button>
         </div>
 
         {/* Auto-growing textarea */}

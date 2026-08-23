@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { ExternalLink } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 
 interface FooterProps {
   appVersion?: string;
@@ -18,21 +19,36 @@ export function Footer({
 }: FooterProps) {
   const handleToolClick = () => onOpenSettings?.("updates");
 
+  const handleOpenWeb = async () => {
+    const webUrl = "https://downlink-web.vercel.app";
+    try {
+      await invoke("open_url", { url: webUrl });
+    } catch {
+      window.open(webUrl, "_blank");
+    }
+  };
+
   return (
     <footer className="flex items-center justify-between bg-transparent px-4 py-2 pb-3 select-none">
-      {/* Left: App Branding & Release Version */}
-      <div className="flex items-center gap-2">
+      {/* Left: App Branding & Release Version (Clickable to Home Page) */}
+      <button
+        type="button"
+        onClick={handleOpenWeb}
+        title="Visit Downlink Website (https://downlink-web.vercel.app)"
+        className="group flex items-center gap-2 rounded-lg px-1.5 py-1 -ml-1.5 hover:bg-zinc-800/60 active:scale-[0.98] transition-all cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
+      >
         <Image
           src="/downlink-square.png"
           alt="Downlink"
           width={14}
           height={14}
-          className="rounded opacity-60"
+          className="rounded opacity-60 group-hover:opacity-100 group-hover:scale-105 transition-all"
         />
-        <span className="text-[11px] font-medium text-zinc-500 tracking-tight">
+        <span className="text-[11px] font-medium text-zinc-500 group-hover:text-zinc-300 tracking-tight transition-colors flex items-center gap-1">
           Downlink{appVersion ? ` v${appVersion}` : ""}
+          <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity text-cyan-400" />
         </span>
-      </div>
+      </button>
 
       {/* Right: Engine Status & Update Shortcut */}
       <div className="flex items-center gap-2">
