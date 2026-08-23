@@ -49,17 +49,25 @@ fn extract_and_chunk_cues(val: &Value) -> Vec<SubtitleCue> {
     };
 
     for seg in segments {
-        // 1. Voice Activity Detection (VAD) & Silence Probabilities
+        // 1. Voice Activity Detection (VAD) — tighter threshold catches
+        //    instrumental sections where Whisper hallucinates speech
         if let Some(no_speech) = seg.get("no_speech_prob").and_then(|v| v.as_f64()) {
-            if no_speech > 0.65 {
-                continue; // Skip silent or purely instrumental segments
+            if no_speech > 0.5 {
+                continue;
             }
         }
 
-        // 2. Repetition & Hallucination Loop Protection
+        // 2. Average log-probability gate — low confidence = garbage text
+        if let Some(avg_logprob) = seg.get("avg_logprob").and_then(|v| v.as_f64()) {
+            if avg_logprob < -0.8 {
+                continue;
+            }
+        }
+
+        // 3. Repetition & Hallucination Loop Protection
         if let Some(compression) = seg.get("compression_ratio").and_then(|v| v.as_f64()) {
-            if compression > 2.4 {
-                continue; // Skip repetitive hallucinated loops
+            if compression > 2.0 {
+                continue;
             }
         }
 
@@ -73,10 +81,22 @@ fn extract_and_chunk_cues(val: &Value) -> Vec<SubtitleCue> {
 
         // Check if word-level timestamps are present
         if let Some(words) = seg.get("words").and_then(|v| v.as_array()) {
-            let mut word_cues = chunk_from_words(words);
-            if !word_cues.is_empty() {
-                all_cues.append(&mut word_cues);
-                continue;
+            // Filter out low-confidence words before chunking
+            let confident_words: Vec<Value> = words
+                .iter()
+                .filter(|w| {
+                    let prob = w.get("probability").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                    prob > 0.35
+                })
+                .cloned()
+                .collect();
+
+            if !confident_words.is_empty() {
+                let mut word_cues = chunk_from_words(&confident_words);
+                if !word_cues.is_empty() {
+                    all_cues.append(&mut word_cues);
+                    continue;
+                }
             }
         }
 

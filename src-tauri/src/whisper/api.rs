@@ -66,10 +66,8 @@ async fn transcribe_openai_compat(
         .text("model", model.to_string())
         .text("response_format", "verbose_json")
         .text("temperature", "0")
-        .text(
-            "prompt",
-            "Transcribe spoken dialogue and vocal lyrics verbatim with natural punctuation and proper capitalization. Do not transcribe silence, background noise, or instrumental music. Leave silent intervals blank without repetitive filler or sound tags.",
-        );
+        .text("timestamp_granularities[]", "word")
+        .text("timestamp_granularities[]", "segment");
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -142,7 +140,7 @@ async fn transcribe_gemini(
     let body = serde_json::json!({
         "contents": [{
             "parts": [
-                { "text": "Transcribe this audio verbatim into broadcast-quality SRT subtitle format with timestamps. Follow standard subtitling rules strictly: Maximum 40 characters per line, maximum 2 lines per subtitle cue (never 3+ lines covering the screen). Break lines at natural punctuation and clause boundaries. Return ONLY valid SRT text." },
+                { "text": "You are a professional broadcast subtitler. Transcribe ONLY the spoken dialogue and sung lyrics in this audio into valid SRT format with accurate timestamps. Rules: max 42 characters per line, max 2 lines per cue, split at sentence and clause boundaries. Do NOT transcribe silence, instrumental music, applause, or background noise — simply skip those intervals. Do NOT output sound-effect tags like [Music] or [Applause]. Return ONLY the raw SRT text, nothing else." },
                 { "inline_data": { "mime_type": "audio/mp4", "data": b64 } }
             ]
         }],
