@@ -12,6 +12,9 @@ pub struct ConnectionInfo {
     pub hostname: String,
     pub pairing_url: String,
     pub mdns_name: String,
+    pub mdns_url: String,
+    pub relay_code: String,
+    pub relay_url: String,
 }
 
 /// Retrieve the local system's active LAN IPv4 address and pairing connection details.
@@ -28,6 +31,9 @@ pub fn get_local_connection_info() -> ConnectionInfo {
     let port = 3984;
     let pairing_url = format!("http://{}:{}/mobile", local_ip, port);
     let mdns_name = format!("{}.local", hostname);
+    let mdns_url = format!("http://{}:{}/mobile", mdns_name, port);
+    let relay_code = "DL-9482".to_string();
+    let relay_url = format!("http://{}:{}/mobile?relay={}", local_ip, port, relay_code);
 
     ConnectionInfo {
         ip: local_ip,
@@ -35,6 +41,9 @@ pub fn get_local_connection_info() -> ConnectionInfo {
         hostname,
         pairing_url,
         mdns_name,
+        mdns_url,
+        relay_code,
+        relay_url,
     }
 }
 

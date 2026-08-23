@@ -1,5 +1,6 @@
 pub mod discovery;
 pub mod mobile;
+pub mod relay;
 
 use axum::{
     extract::State,
@@ -49,6 +50,8 @@ struct GatewayState {
 }
 
 pub fn start_gateway_server(app_handle: AppHandle) {
+    relay::start_relay_service(app_handle.clone());
+
     tauri::async_runtime::spawn(async move {
         let cors = CorsLayer::new()
             .allow_origin(Any)
