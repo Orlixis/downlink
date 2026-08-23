@@ -1,7 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -64,3 +65,4 @@ tauri.key
 *.lock
 src-tauri/Cargo.lock
 latest.json
+web/.next

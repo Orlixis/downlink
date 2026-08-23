@@ -1,3 +1,0 @@
-module.exports=[21817,a=>{"use strict";var b=a.i(80516);function c({children:a}){return(0,b.jsx)(b.Fragment,{children:a})}a.s(["default",()=>c,"metadata",0,{title:"Downlink Mobile Companion",description:"Send video & torrent downloads to your Mac or PC from anywhere.",manifest:"./mobile-manifest.json",appleWebApp:{capable:!0,statusBarStyle:"black-translucent",title:"Downlink"},icons:{icon:"./downlink-square.png",apple:"./downlink-square.png"}},"viewport",0,{themeColor:"#09090b",width:"device-width",initialScale:1,maximumScale:1,userScalable:!1}])}];
-
-//# sourceMappingURL=web_app_mobile_layout_tsx_ac41030c._.js.map

@@ -1,7 +1,0 @@
-{
-  "/_global-error/page": "/_global-error",
-  "/_not-found/page": "/_not-found",
-  "/api/relay/[room]/route": "/api/relay/[room]",
-  "/mobile/page": "/mobile",
-  "/page": "/"
-}
