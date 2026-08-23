@@ -51,8 +51,15 @@ if (!fs.existsSync(nojekyllPath)) {
   console.log('[sync-mobile] Created docs/.nojekyll');
 }
 
-// 4. Copy PWA manifest and service worker
-const filesToCopy = ['mobile-sw.js', 'mobile-manifest.json', 'downlink.svg', 'downlink-square.png'];
+// 4. Copy PWA manifest, service worker, and Downlink official PNG icons
+const filesToCopy = [
+  'mobile-sw.js',
+  'mobile-manifest.json',
+  'downlink-square.png',
+  'downlink.png',
+  'downlink-transparent.png',
+  'downlink.svg'
+];
 filesToCopy.forEach((filename) => {
   const src = path.join(publicDir, filename);
   if (fs.existsSync(src)) {

@@ -212,11 +212,11 @@ export default function MobileCompanionPage() {
         {/* Brand Header */}
         <header className="flex items-center justify-between px-2">
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 p-0.5 shadow-lg shadow-cyan-500/20">
-              <div className="w-full h-full bg-zinc-950 rounded-[14px] flex items-center justify-center">
-                <Download className="w-5 h-5 text-cyan-400" />
-              </div>
-            </div>
+            <img
+              src="./downlink-square.png"
+              alt="Downlink"
+              className="w-10 h-10 rounded-2xl shadow-lg shadow-cyan-500/20 object-cover border border-zinc-800"
+            />
             <div>
               <h1 className="text-base font-extrabold tracking-tight text-white flex items-center gap-2">
                 Downlink

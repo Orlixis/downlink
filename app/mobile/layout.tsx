@@ -11,15 +11,15 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Downlink Mobile Companion",
   description: "Send video & torrent downloads to your Mac or PC from anywhere.",
-  manifest: "/mobile-manifest.json",
+  manifest: "./mobile-manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Downlink",
   },
   icons: {
-    icon: "/downlink.svg",
-    apple: "/downlink.svg",
+    icon: "./downlink-square.png",
+    apple: "./downlink-square.png",
   },
 };
 

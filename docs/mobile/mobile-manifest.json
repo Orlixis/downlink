@@ -9,13 +9,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "./downlink.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "./downlink-square.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./icon.png",
+      "src": "./downlink.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
