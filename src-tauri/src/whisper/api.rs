@@ -68,7 +68,7 @@ async fn transcribe_openai_compat(
         .text("temperature", "0")
         .text(
             "prompt",
-            "Transcribe verbatim with natural punctuation, proper capitalization, and concise sentence structures. Format clean standard subtitles without filler words or repetitions.",
+            "Transcribe spoken dialogue and vocal lyrics verbatim with natural punctuation and proper capitalization. Do not transcribe silence, background noise, or instrumental music. Leave silent intervals blank without repetitive filler or sound tags.",
         );
 
     let client = reqwest::Client::builder()

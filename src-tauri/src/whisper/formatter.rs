@@ -1,11 +1,11 @@
 /// Cinema & Broadcast Standard Subtitle Chunker and Formatter (Netflix / BBC Standard)
 /// 
-/// Core Rules:
+/// Features:
 /// - Max 38–42 characters per line (CPL)
 /// - Max 1–2 lines per subtitle cue (never 3+ lines covering the video)
-/// - Strict Sentence & Phrase Isolation (each sentence/phrase appears sequentially in rhythm)
-/// - Clean linguistic breaking at punctuation (. , ! ? —), conjunctions, and clause boundaries
+/// - Strict Sentence & Phrase Isolation (sequential cinematic rhythm)
 /// - Word-level and proportional timestamp interpolation
+/// - Robust Silence, Background Noise, and Hallucination Filter (VAD & Repetition Guards)
 
 use serde_json::Value;
 
@@ -30,9 +30,12 @@ pub fn format_whisper_json_to_srt(json_str: &str) -> String {
     let cues = extract_and_chunk_cues(&val);
     if cues.is_empty() {
         if let Some(text) = val.get("text").and_then(|v| v.as_str()) {
-            return text.trim().to_string();
+            let clean = text.trim();
+            if !is_noise_or_hallucination(clean) {
+                return clean.to_string();
+            }
         }
-        return json_str.trim().to_string();
+        return String::new();
     }
 
     render_srt(&cues)
@@ -46,11 +49,25 @@ fn extract_and_chunk_cues(val: &Value) -> Vec<SubtitleCue> {
     };
 
     for seg in segments {
+        // 1. Voice Activity Detection (VAD) & Silence Probabilities
+        if let Some(no_speech) = seg.get("no_speech_prob").and_then(|v| v.as_f64()) {
+            if no_speech > 0.65 {
+                continue; // Skip silent or purely instrumental segments
+            }
+        }
+
+        // 2. Repetition & Hallucination Loop Protection
+        if let Some(compression) = seg.get("compression_ratio").and_then(|v| v.as_f64()) {
+            if compression > 2.4 {
+                continue; // Skip repetitive hallucinated loops
+            }
+        }
+
         let seg_start = seg.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let seg_end = seg.get("end").and_then(|v| v.as_f64()).unwrap_or(seg_start + 2.0);
         let seg_text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
 
-        if seg_text.is_empty() {
+        if seg_text.is_empty() || is_noise_or_hallucination(seg_text) {
             continue;
         }
 
@@ -71,6 +88,50 @@ fn extract_and_chunk_cues(val: &Value) -> Vec<SubtitleCue> {
     all_cues
 }
 
+/// Detects background noise tokens, silence placeholders, and common Whisper hallucinations
+pub fn is_noise_or_hallucination(text: &str) -> bool {
+    let clean = text.trim();
+    if clean.is_empty() {
+        return true;
+    }
+
+    // Strip punctuation only check
+    let only_punct = clean.chars().all(|c| c.is_ascii_punctuation() || c.is_whitespace() || c == '♪' || c == '♫');
+    if only_punct {
+        return true;
+    }
+
+    let lower = clean.to_lowercase();
+
+    // Noise and non-speech brackets
+    let noise_patterns = [
+        "[music]", "[applause]", "[laughter]", "[silence]", "[cheering]", "[gasp]",
+        "[inaudible]", "[screaming]", "[crying]", "[snicker]", "[groan]", "[sigh]",
+        "(music)", "(applause)", "(laughter)", "(silence)", "(cheering)", "(gasp)",
+        "*music*", "*applause*", "*laughter*", "*silence*",
+        "♪", "♪♪", "♪♪♪", "♫", "...", "--",
+    ];
+    for pattern in &noise_patterns {
+        if lower == *pattern || lower == format!("[{}]", pattern) {
+            return true;
+        }
+    }
+
+    // Whisper ending / loop hallucinations
+    let hallucination_prefixes = [
+        "subtitles by", "transcribed by", "translated by", "amara.org",
+        "thank you for watching", "thanks for watching", "please subscribe",
+        "like and subscribe", "copyright", "all rights reserved",
+    ];
+    for prefix in &hallucination_prefixes {
+        if lower.starts_with(prefix) || lower == *prefix {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Chunk using word-level timestamps for frame-accurate movie pacing
 fn chunk_from_words(words: &[Value]) -> Vec<SubtitleCue> {
     let mut cues = Vec::new();
@@ -78,7 +139,7 @@ fn chunk_from_words(words: &[Value]) -> Vec<SubtitleCue> {
 
     for (idx, w) in words.iter().enumerate() {
         let text = w.get("word").and_then(|v| v.as_str()).unwrap_or("").trim();
-        if text.is_empty() {
+        if text.is_empty() || is_noise_or_hallucination(text) {
             continue;
         }
         let start = w.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -87,7 +148,6 @@ fn chunk_from_words(words: &[Value]) -> Vec<SubtitleCue> {
         let is_sentence_end = text.ends_with('.') || text.ends_with('!') || text.ends_with('?');
         let is_clause_end = text.ends_with(',') || text.ends_with(';') || text.ends_with(':') || text.ends_with('—') || text.ends_with('-');
         
-        // Check if next word starts a new capitalized sentence or refrain (e.g. "Never gonna...")
         let next_is_capital = words.get(idx + 1)
             .and_then(|nw| nw.get("word").and_then(|v| v.as_str()))
             .map(|nw| nw.trim().chars().next().map(|c| c.is_uppercase()).unwrap_or(false))
@@ -98,11 +158,6 @@ fn chunk_from_words(words: &[Value]) -> Vec<SubtitleCue> {
         let total_chars: usize = current_words.iter().map(|(t, _, _)| t.len() + 1).sum();
         let cue_duration = end - current_words.first().map(|w| w.1).unwrap_or(start);
 
-        // Strict split conditions:
-        // 1. Sentence ending punctuation (. ! ?)
-        // 2. Next word is capitalized and we already have a reasonable phrase (>= 20 chars)
-        // 3. Clause ending punctuation (, ;) and phrase has >= 24 chars
-        // 4. Character limit reached (>= 60 chars) or duration limit reached (>= 4.0s)
         let should_split = is_sentence_end
             || (next_is_capital && total_chars >= 20)
             || (is_clause_end && total_chars >= 24)
@@ -134,12 +189,20 @@ fn build_cue_from_word_list(words: &[(String, f64, f64)]) -> Option<SubtitleCue>
     let end = words.last()?.2.max(start + MIN_CUE_DURATION);
     let full_text: String = words.iter().map(|(t, _, _)| t.as_str()).collect::<Vec<_>>().join(" ");
 
+    if is_noise_or_hallucination(&full_text) {
+        return None;
+    }
+
     let lines = balance_lines(&full_text);
     Some(SubtitleCue { start, end, lines })
 }
 
 /// Chunk long segments proportionally into short, single-sentence / single-phrase cues
 fn chunk_segment_proportionally(start: f64, end: f64, text: &str) -> Vec<SubtitleCue> {
+    if is_noise_or_hallucination(text) {
+        return Vec::new();
+    }
+
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
         return Vec::new();
@@ -197,8 +260,11 @@ fn chunk_segment_proportionally(start: f64, end: f64, text: &str) -> Vec<Subtitl
 
     for chunk in chunks {
         let chunk_text = chunk.join(" ");
-        let chunk_len = chunk_text.len() + 1;
+        if is_noise_or_hallucination(&chunk_text) {
+            continue;
+        }
 
+        let chunk_len = chunk_text.len() + 1;
         let sub_start = start + (accumulated_chars as f64 / total_chars as f64) * duration;
         accumulated_chars += chunk_len;
         let sub_end = start + (accumulated_chars as f64 / total_chars as f64) * duration;
@@ -269,13 +335,14 @@ fn balance_lines(text: &str) -> Vec<String> {
 /// Render cues to standardized SRT file format
 pub fn render_srt(cues: &[SubtitleCue]) -> String {
     let mut srt = String::new();
+    let mut cue_number = 1;
 
-    for (i, cue) in cues.iter().enumerate() {
+    for cue in cues {
         if cue.lines.is_empty() {
             continue;
         }
 
-        srt.push_str(&format!("{}\n", i + 1));
+        srt.push_str(&format!("{}\n", cue_number));
         srt.push_str(&format!(
             "{} --> {}\n",
             format_timestamp(cue.start),
@@ -286,6 +353,7 @@ pub fn render_srt(cues: &[SubtitleCue]) -> String {
             srt.push('\n');
         }
         srt.push('\n');
+        cue_number += 1;
     }
 
     srt.trim_end().to_string()
