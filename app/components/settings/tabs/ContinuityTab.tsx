@@ -19,6 +19,8 @@ interface ContinuityInfo {
   hostname: string;
   pairing_url: string;
   mdns_name: string;
+  relay_code?: string;
+  room_code?: string;
 }
 
 export function ContinuityTab() {
@@ -35,8 +37,9 @@ export function ContinuityTab() {
         if (!mounted) return;
         setInfo(res);
 
-        const url = res.pairing_url || `http://${res.ip}:${res.port}/mobile`;
-        const qr = await QRCode.toDataURL(url, {
+        const room = res.relay_code || res.room_code || "DL-9482";
+        const hostedUrl = `https://orlixis.github.io/downlink/mobile?ip=${res.ip}:${res.port}&room=${room}`;
+        const qr = await QRCode.toDataURL(hostedUrl, {
           width: 320,
           margin: 1,
           color: {
@@ -58,7 +61,9 @@ export function ContinuityTab() {
 
   const handleCopyPairingUrl = () => {
     if (!info) return;
-    navigator.clipboard.writeText(info.pairing_url);
+    const room = info.relay_code || info.room_code || "DL-9482";
+    const hostedUrl = `https://orlixis.github.io/downlink/mobile?ip=${info.ip}:${info.port}&room=${room}`;
+    navigator.clipboard.writeText(hostedUrl);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
   };
