@@ -124,7 +124,7 @@ function Download-FFmpeg {
                     }
                 }
             } catch {
-                Write-Warning "Failed downloading from $Url: $_. Trying next fallback mirror..."
+                Write-Warning "Failed downloading from $($Url) - error: $($_.Exception.Message). Trying next fallback mirror..."
             }
         }
 

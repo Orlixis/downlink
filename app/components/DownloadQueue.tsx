@@ -210,7 +210,7 @@ export function DownloadQueue({
     : null;
 
   return (
-    <div className="flex h-full flex-col  border-l border-zinc-800/80 backdrop-blur-2xl overflow-hidden select-none">
+    <div className="flex h-full flex-col bg-transparent overflow-hidden select-none">
       {/* ── Header: Tab switcher ────────────────────────── */}
       <div className="flex items-center justify-between border-b border-zinc-800/80 p-3 pb-2.5">
         <div className="flex rounded-lg bg-white/[0.04] p-0.5 ring-1 ring-white/[0.05]">

@@ -295,7 +295,7 @@ export default function Home() {
       />
 
       <div className={`flex flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-hidden"}`}>
-        <div className="flex-1 flex flex-col border-r border-zinc-800">
+        <div className="flex-1 flex flex-col">
           <div className={`flex-1 ${isAnimatingOut ? "overflow-visible" : "overflow-y-auto"}`}>
             <div className="flex min-h-full items-center justify-center p-6">
               <PreviewPanel
