@@ -69,6 +69,8 @@ pub fn start_gateway_server(app_handle: AppHandle) {
             .route("/", get(serve_mobile))
             .route("/mobile", get(serve_mobile))
             .route("/companion", get(serve_mobile))
+            .route("/sw.js", get(serve_sw))
+            .route("/manifest.json", get(serve_manifest))
             .route("/favicon.ico", get(serve_favicon))
             .route("/icon.svg", get(serve_favicon))
             .route("/api/pairing", get(serve_pairing))
@@ -97,6 +99,51 @@ pub fn start_gateway_server(app_handle: AppHandle) {
             }
         }
     });
+}
+
+async fn serve_sw() -> impl IntoResponse {
+    let js = r###"
+const CACHE_NAME = 'downlink-companion-v1';
+const ASSETS = ['/mobile', '/icon.svg', '/favicon.ico', '/manifest.json'];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    fetch(e.request).catch(() => caches.match(e.request).then((res) => res || caches.match('/mobile')))
+  );
+});
+"###;
+    ([(axum::http::header::CONTENT_TYPE, "application/javascript")], js)
+}
+
+async fn serve_manifest() -> impl IntoResponse {
+    let json = r###"{
+  "name": "Downlink Companion",
+  "short_name": "Downlink",
+  "start_url": "/mobile",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}"###;
+    ([(axum::http::header::CONTENT_TYPE, "application/manifest+json")], json)
 }
 
 async fn serve_mobile() -> Html<&'static str> {

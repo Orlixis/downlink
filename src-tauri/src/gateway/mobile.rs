@@ -8,6 +8,7 @@ pub const MOBILE_APP_HTML: &str = r###"<!DOCTYPE html>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Downlink">
   <meta name="theme-color" content="#09090b">
+  <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <link rel="apple-touch-icon" href="/icon.svg">
   <title>Downlink Companion</title>
@@ -244,6 +245,15 @@ pub const MOBILE_APP_HTML: &str = r###"<!DOCTYPE html>
       document.getElementById('toastMsg').innerText = msg;
       toast.classList.add('show');
       setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Register Service Worker for offline PWA caching
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.debug('SW registration skipped:', err);
+        });
+      });
     }
 
     // Auto sync on visibility change and heartbeat
