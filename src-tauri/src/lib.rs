@@ -260,19 +260,55 @@ pub fn run() {
                             let _ = win.unminimize();
                             let _ = win.set_focus();
                         }
-                        if let Some(target) = url_str.strip_prefix("downlink://capture?url=")
+                        if url_str.starts_with("magnet:") {
+                            let title = crate::download_manager::torrent::extract_magnet_name(&url_str);
+                            let _ = handle_clone.emit("browser-link-captured", serde_json::json!({
+                                "url": url_str,
+                                "title": title,
+                                "auto_start": true,
+                            }));
+                        } else if url_str.starts_with("file://") && url_str.ends_with(".torrent") {
+                            let clean_path = url_str.strip_prefix("file://").unwrap_or(&url_str);
+                            let decoded_path = urlencoding::decode(clean_path).unwrap_or(std::borrow::Cow::Borrowed(clean_path)).to_string();
+                            let title = crate::download_manager::torrent::extract_magnet_name(&decoded_path);
+                            let _ = handle_clone.emit("browser-link-captured", serde_json::json!({
+                                "url": decoded_path,
+                                "title": title,
+                                "auto_start": true,
+                            }));
+                        } else if let Some(target) = url_str.strip_prefix("downlink://capture?url=")
                             .or_else(|| url_str.strip_prefix("downlink://download?url="))
                             .or_else(|| url_str.strip_prefix("downlink://magnet?url="))
                             .or_else(|| url_str.strip_prefix("downlink://"))
                         {
                             let decoded = urlencoding::decode(target).unwrap_or(std::borrow::Cow::Borrowed(target)).to_string();
+                            let title = crate::download_manager::torrent::extract_magnet_name(&decoded);
                             let _ = handle_clone.emit("browser-link-captured", serde_json::json!({
                                 "url": decoded,
+                                "title": title,
                                 "auto_start": true,
                             }));
                         }
                     }
                 });
+
+                let handle_for_args = app.handle().clone();
+                let args: Vec<String> = std::env::args().collect();
+                for arg in args.into_iter().skip(1) {
+                    if arg.ends_with(".torrent") || arg.starts_with("magnet:") {
+                        let handle = handle_for_args.clone();
+                        let target_arg = arg.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                            let title = crate::download_manager::torrent::extract_magnet_name(&target_arg);
+                            let _ = handle.emit("browser-link-captured", serde_json::json!({
+                                "url": target_arg,
+                                "title": title,
+                                "auto_start": true,
+                            }));
+                        });
+                    }
+                }
             }
 
             #[cfg(target_os = "macos")]
@@ -318,6 +354,16 @@ pub fn run() {
             }
 
             let window = app.get_webview_window("main").unwrap();
+            let win_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    #[cfg(target_os = "macos")]
+                    {
+                        api.prevent_close();
+                        let _ = win_clone.hide();
+                    }
+                }
+            });
             #[cfg(target_os = "macos")]
             {
                 use window_vibrancy::{
@@ -440,6 +486,15 @@ pub fn run() {
             commands::continuity::get_nearby_devices,
             commands::continuity::handoff_download,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

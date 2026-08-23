@@ -21,7 +21,34 @@ pub async fn fetch_metadata(
     let first = urls
         .into_iter()
         .next()
-        .ok_or_else(|| "No valid http(s) URL found.".to_string())?;
+        .or_else(|| {
+            let trimmed = url.trim();
+            if trimmed.starts_with("magnet:") || trimmed.ends_with(".torrent") || std::path::Path::new(trimmed).exists() {
+                Some(trimmed.to_string())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| "No valid URL or torrent link found.".to_string())?;
+
+    if first.starts_with("magnet:") || first.ends_with(".torrent") || first.contains("xt=urn:btih:") || std::path::Path::new(&first).exists() {
+        let title = crate::download_manager::torrent::extract_magnet_name(&first)
+            .unwrap_or_else(|| "BitTorrent Media Download".to_string());
+        return Ok(FetchMetadataResult {
+            id: Uuid::nil(),
+            url: first,
+            stream_url: None,
+            is_playlist: false,
+            title: Some(title),
+            uploader: Some("BitTorrent Swarm".to_string()),
+            duration_seconds: None,
+            thumbnail_url: None,
+            filesize_bytes: None,
+            playlist_title: None,
+            playlist_count_hint: None,
+            available_qualities: vec![],
+        });
+    }
 
     const CACHE_TTL: StdDuration = StdDuration::from_secs(600);
     {

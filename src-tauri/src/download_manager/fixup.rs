@@ -239,10 +239,56 @@ pub async fn fixup_disguised_hls_stream(final_path_str: &str, ffmpeg_bin: &Path)
     None
 }
 
-pub async fn extract_video_thumbnail_base64(video_path: &Path, ffmpeg_bin: &Path) -> Option<String> {
-    if !video_path.exists() {
+pub fn find_primary_media_file(path: &Path) -> Option<PathBuf> {
+    if !path.exists() {
         return None;
     }
+    if path.is_file() {
+        return Some(path.to_path_buf());
+    }
+    if path.is_dir() {
+        let media_extensions = [
+            "mp4", "mkv", "avi", "webm", "mov", "m4v", "flv", "ts", "wmv", "mp3", "flac", "wav",
+            "m4a", "aac", "ogg", "opus",
+        ];
+        let mut largest_file: Option<(PathBuf, u64)> = None;
+
+        let mut stack = vec![path.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        stack.push(p);
+                    } else if p.is_file() {
+                        let ext = p
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if media_extensions.contains(&ext.as_str()) {
+                            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                            match &largest_file {
+                                Some((_, max_size)) if size > *max_size => {
+                                    largest_file = Some((p, size));
+                                }
+                                None => {
+                                    largest_file = Some((p, size));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return largest_file.map(|(p, _)| p);
+    }
+    None
+}
+
+pub async fn extract_video_thumbnail_base64(video_path: &Path, ffmpeg_bin: &Path) -> Option<String> {
+    let target_file = find_primary_media_file(video_path)?;
 
     let thumb_tmp = std::env::temp_dir().join(format!("downlink_thumb_{}.jpg", uuid::Uuid::new_v4()));
 
@@ -252,7 +298,7 @@ pub async fn extract_video_thumbnail_base64(video_path: &Path, ffmpeg_bin: &Path
         "-ss",
         "00:00:03",
         "-i",
-        video_path.to_string_lossy().as_ref(),
+        target_file.to_string_lossy().as_ref(),
         "-vframes",
         "1",
         "-q:v",

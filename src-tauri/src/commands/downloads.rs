@@ -15,9 +15,18 @@ pub fn add_urls(
     log::info!("add_urls called with urls_text: {:?}", urls_text);
     log::info!("add_urls options: {:?}", options);
 
-    let urls = url_utils::extract_urls(&urls_text);
+    let urls = {
+        let mut extracted = url_utils::extract_urls(&urls_text);
+        if extracted.is_empty() {
+            let trimmed = urls_text.trim();
+            if trimmed.starts_with("magnet:") || trimmed.ends_with(".torrent") || std::path::Path::new(trimmed).exists() {
+                extracted.push(trimmed.to_string());
+            }
+        }
+        extracted
+    };
     if urls.is_empty() {
-        return Err("No valid http(s) URLs found.".to_string());
+        return Err("No valid URLs or torrent links found.".to_string());
     }
 
     let source_kind = match options.source_kind.as_deref() {
@@ -63,10 +72,13 @@ pub fn add_urls(
             )
             .map_err(|e| format!("Failed to insert download: {e}"))?;
 
-        if options.title.is_some() || options.uploader.is_some() || options.thumbnail_url.is_some() {
+        let magnet_name = crate::download_manager::torrent::extract_magnet_name(u);
+        let title_to_set = options.title.as_deref().or(magnet_name.as_deref());
+
+        if title_to_set.is_some() || options.uploader.is_some() || options.thumbnail_url.is_some() {
             let _ = db.update_metadata(
                 id,
-                options.title.as_deref(),
+                title_to_set,
                 options.uploader.as_deref(),
                 options.duration_seconds,
                 options.thumbnail_url.as_deref(),

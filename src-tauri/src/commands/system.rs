@@ -54,10 +54,16 @@ pub async fn open_file(path: String) -> Result<(), String> {
         return Err(format!("File does not exist: {}", path.display()));
     }
 
+    let target_path = if path.is_dir() {
+        crate::download_manager::fixup::find_primary_media_file(&path).unwrap_or(path)
+    } else {
+        path
+    };
+
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg(&path)
+            .arg(&target_path)
             .spawn()
             .map_err(|e| format!("Failed to open file: {e}"))?;
         Ok(())
@@ -65,7 +71,7 @@ pub async fn open_file(path: String) -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        open::that(&path).map_err(|e| format!("Failed to open file: {e}"))?;
+        open::that(&target_path).map_err(|e| format!("Failed to open file: {e}"))?;
         Ok(())
     }
 }

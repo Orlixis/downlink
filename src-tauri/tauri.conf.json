@@ -75,6 +75,17 @@
     "shortDescription": "A lightweight cross-platform video downloader powered by yt-dlp",
     "longDescription": "Downlink is a modern, user-friendly desktop application for downloading videos and audio from YouTube and hundreds of other sites. Built with yt-dlp as the engine, it provides a clean interface for managing downloads with features like quality presets, playlist support, and SponsorBlock integration.",
     "copyright": "© 2025 Downlink",
+    "fileAssociations": [
+      {
+        "ext": [
+          "torrent"
+        ],
+        "name": "BitTorrent Document",
+        "description": "BitTorrent Seed File",
+        "mimeType": "application/x-bittorrent",
+        "role": "Viewer"
+      }
+    ],
     "macOS": {
       "minimumSystemVersion": "10.13"
     },
@@ -97,7 +108,8 @@
     "deep-link": {
       "desktop": {
         "schemes": [
-          "downlink"
+          "downlink",
+          "magnet"
         ]
       }
     }

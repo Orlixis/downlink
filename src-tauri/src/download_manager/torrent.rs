@@ -44,6 +44,39 @@ const FAST_PUBLIC_TRACKERS: &[&str] = &[
     "udp://tracker.dler.org:6969/announce",
 ];
 
+/// Extracts the display name (`dn` parameter) from a magnet URI or file path.
+pub fn extract_magnet_name(raw_url: &str) -> Option<String> {
+    if raw_url.starts_with("magnet:?") {
+        if let Ok(parsed) = url::Url::parse(raw_url) {
+            for (key, val) in parsed.query_pairs() {
+                if key == "dn" && !val.trim().is_empty() {
+                    return Some(val.to_string());
+                }
+            }
+        }
+        // Fallback for non-standard magnet formatting
+        if let Some(idx) = raw_url.find("dn=") {
+            let rest = &raw_url[idx + 3..];
+            let end = rest.find('&').unwrap_or(rest.len());
+            let name_encoded = &rest[..end];
+            if let Ok(decoded) = urlencoding::decode(name_encoded) {
+                if !decoded.trim().is_empty() {
+                    return Some(decoded.to_string());
+                }
+            }
+        }
+    } else if raw_url.ends_with(".torrent") || Path::new(raw_url).exists() {
+        let path = Path::new(raw_url);
+        if let Some(stem) = path.file_stem() {
+            let s = stem.to_string_lossy().to_string();
+            if !s.trim().is_empty() {
+                return Some(s);
+            }
+        }
+    }
+    None
+}
+
 /// Enriches a magnet URI with tier-1 high-availability public trackers to maximize peer discovery speed.
 pub fn enrich_magnet_uri(raw_url: &str) -> String {
     if !raw_url.starts_with("magnet:?") {
@@ -164,6 +197,7 @@ pub async fn execute_torrent_download(
     let mut last_downloaded: u64 = 0;
     let mut last_time = Instant::now();
     let mut check_interval = tokio::time::interval(Duration::from_millis(350));
+    let mut metadata_emitted = false;
 
     loop {
         tokio::select! {
@@ -173,6 +207,24 @@ pub async fn execute_torrent_download(
                 return Err(DownloadError::Canceled);
             }
             _ = check_interval.tick() => {
+                if !metadata_emitted {
+                    if let Some(ref name) = handle.name() {
+                        if !name.trim().is_empty() && name != "BitTorrent Download" {
+                            metadata_emitted = true;
+                            let _ = event_tx.send(DownlinkEvent::MetadataReady {
+                                id,
+                                info: crate::events::MediaInfo {
+                                    title: Some(name.clone()),
+                                    uploader: None,
+                                    duration_seconds: None,
+                                    thumbnail_url: None,
+                                    webpage_url: Some(url.to_string()),
+                                },
+                            }).await;
+                        }
+                    }
+                }
+
                 let stats = handle.stats();
                 let downloaded = stats.progress_bytes;
                 let total = stats.total_bytes;
@@ -240,7 +292,19 @@ pub async fn execute_torrent_download(
     }
 
     // Determine output directory / path
-    let final_path = Some(output_dir.to_string());
+    let torrent_name: Option<String> = handle.name();
+
+    let final_path = if let Some(ref name) = torrent_name {
+        let candidate = handle.output_folder().join(name);
+        if candidate.exists() {
+            Some(candidate.to_string_lossy().to_string())
+        } else {
+            let direct = PathBuf::from(output_dir).join(name);
+            Some(direct.to_string_lossy().to_string())
+        }
+    } else {
+        Some(handle.output_folder().to_string_lossy().to_string())
+    };
 
     Ok(final_path)
 }

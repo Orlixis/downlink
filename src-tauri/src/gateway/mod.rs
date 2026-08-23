@@ -226,6 +226,7 @@ async fn handle_capture(
 
     let preset = req.preset_id.as_deref().unwrap_or("recommended_best");
     let referer = req.referer.as_deref();
+    let initial_title = crate::download_manager::torrent::extract_magnet_name(&target_url);
 
     let id = {
         let mut db = state.db.lock().await;
@@ -238,7 +239,12 @@ async fn handle_capture(
             None,
             referer,
         ) {
-            Ok(id) => id,
+            Ok(id) => {
+                if let Some(ref title) = initial_title {
+                    let _ = db.update_metadata(id, Some(title.as_str()), None, None, None);
+                }
+                id
+            }
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
