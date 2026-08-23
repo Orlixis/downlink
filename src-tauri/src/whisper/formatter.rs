@@ -142,6 +142,7 @@ pub fn is_noise_or_hallucination(text: &str) -> bool {
         "subtitles by", "transcribed by", "translated by", "amara.org",
         "thank you for watching", "thanks for watching", "please subscribe",
         "like and subscribe", "copyright", "all rights reserved",
+        "thank you.", "thank you",
     ];
     for prefix in &hallucination_prefixes {
         if lower.starts_with(prefix) || lower == *prefix {
@@ -236,6 +237,14 @@ fn chunk_segment_proportionally(start: f64, end: f64, text: &str) -> Vec<Subtitl
             lines: vec![text.trim().to_string()],
         }];
     }
+    
+    if full_len <= MAX_LINE_LENGTH && (end - start) > MAX_CUE_DURATION {
+        return vec![SubtitleCue {
+            start: end - MAX_CUE_DURATION,
+            end: end.max((end - MAX_CUE_DURATION) + MIN_CUE_DURATION),
+            lines: vec![text.trim().to_string()],
+        }];
+    }
 
     // Split into natural phrase chunks
     let mut chunks: Vec<Vec<&str>> = Vec::new();
@@ -285,9 +294,15 @@ fn chunk_segment_proportionally(start: f64, end: f64, text: &str) -> Vec<Subtitl
         }
 
         let chunk_len = chunk_text.len() + 1;
-        let sub_start = start + (accumulated_chars as f64 / total_chars as f64) * duration;
+        let mut sub_start = start + (accumulated_chars as f64 / total_chars as f64) * duration;
         accumulated_chars += chunk_len;
-        let sub_end = start + (accumulated_chars as f64 / total_chars as f64) * duration;
+        let mut sub_end = start + (accumulated_chars as f64 / total_chars as f64) * duration;
+
+        // Cap absurdly long cue durations that occur when proportional chunking
+        // spreads short text over a massive silence block. Anchor to the end.
+        if sub_end - sub_start > MAX_CUE_DURATION {
+            sub_start = sub_end - MAX_CUE_DURATION;
+        }
 
         result.push(SubtitleCue {
             start: sub_start,

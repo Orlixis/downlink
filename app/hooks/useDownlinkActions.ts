@@ -355,9 +355,9 @@ export function createDownlinkActions(
         model,
       });
     } catch (e) {
-      const msg = String(e);
+      const msg = String(e).replace(/^"|"$/g, "");
       setLastError(msg);
-      toast.error(`Transcription failed: ${msg}`);
+      toast.error(msg.startsWith("No transcription API") ? msg : `Transcription failed: ${msg}`);
       throw e;
     }
   };
