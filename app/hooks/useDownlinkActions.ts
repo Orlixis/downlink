@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "../components/Toast";
 import type {
@@ -155,16 +156,16 @@ export function createDownlinkActions(
     }
   };
 
-  const getSettings = async (): Promise<UserSettings> => {
+  const getSettings = useCallback(async (): Promise<UserSettings> => {
     try {
       return await invoke<UserSettings>("get_settings");
     } catch (e) {
       setLastError(String(e));
       throw e;
     }
-  };
+  }, []);
 
-  const saveSettings = async (settings: UserSettings): Promise<void> => {
+  const saveSettings = useCallback(async (settings: UserSettings): Promise<void> => {
     try {
       await invoke("save_settings", { settings });
     } catch (e) {
@@ -172,7 +173,7 @@ export function createDownlinkActions(
       toast.error(String(e));
       throw e;
     }
-  };
+  }, []);
 
   const getDownloadDirectory = async (): Promise<string> => {
     try {

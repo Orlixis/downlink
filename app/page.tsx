@@ -127,7 +127,7 @@ export default function Home() {
       setDestination(s.general.download_folder);
       setPresetId(s.general.default_preset);
     }).catch(console.error);
-  }, [downlink.isTauri, downlink.getSettings]);
+  }, [downlink.isTauri]);
 
   const handlePaste = useCallback(async () => {
     try {

@@ -93,12 +93,15 @@ export function SettingsModal({
     contentRef,
   });
 
+  const prevOpenRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen && settings) {
+    if (isOpen && !prevOpenRef.current && settings) {
       setLocalSettings(JSON.parse(JSON.stringify(settings)));
       setError(null);
       if (initialTab) setActiveTab(initialTab);
     }
+    prevOpenRef.current = isOpen;
   }, [isOpen, settings, initialTab]);
 
   const handleSave = useCallback(async () => {
@@ -192,9 +195,20 @@ export function SettingsModal({
       key: K,
       value: UserSettings["subtitles"][K]
     ) => {
-      setLocalSettings((prev) =>
-        prev ? { ...prev, subtitles: { ...prev.subtitles, [key]: value } } : prev
-      );
+      setLocalSettings((prev) => {
+        if (!prev) return prev;
+        const currentSubs = prev.subtitles || {
+          enabled_by_default: false,
+          default_language: "en",
+          include_auto_captions: true,
+          embed_subtitles: true,
+          preferred_format: "srt",
+        };
+        return {
+          ...prev,
+          subtitles: { ...currentSubs, [key]: value },
+        };
+      });
     },
     []
   );
