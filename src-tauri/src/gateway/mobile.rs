@@ -8,6 +8,8 @@ pub const MOBILE_APP_HTML: &str = r###"<!DOCTYPE html>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Downlink">
   <meta name="theme-color" content="#09090b">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
   <title>Downlink Companion</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -97,6 +99,83 @@ pub const MOBILE_APP_HTML: &str = r###"<!DOCTYPE html>
       document.getElementById('urlInput').value = sharedUrl;
     }
 
+    function getQueue() {
+      try {
+        return JSON.parse(localStorage.getItem('downlink_offline_queue') || '[]');
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveQueue(q) {
+      localStorage.setItem('downlink_offline_queue', JSON.stringify(q));
+      updateStatusBadge();
+    }
+
+    function updateStatusBadge(isOnline) {
+      const q = getQueue();
+      const pill = document.querySelector('.status-pill');
+      if (!pill) return;
+
+      if (isOnline === false) {
+        pill.style.background = 'rgba(245, 158, 11, 0.12)';
+        pill.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+        pill.style.color = '#fbbf24';
+        pill.innerHTML = `<span class="dot" style="background:#fbbf24;box-shadow:0 0 8px #fbbf24"></span> ${q.length > 0 ? q.length + ' Pending' : 'Offline'}`;
+      } else {
+        pill.style.background = 'rgba(16, 185, 129, 0.12)';
+        pill.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+        pill.style.color = '#34d399';
+        pill.innerHTML = `<span class="dot" style="background:#34d399;box-shadow:0 0 8px #34d399"></span> Connected`;
+      }
+    }
+
+    async function flushQueue() {
+      const q = getQueue();
+      if (q.length === 0) return;
+
+      const remaining = [];
+      let sentCount = 0;
+
+      for (const item of q) {
+        try {
+          const res = await fetch('/api/capture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+          });
+          if (res.ok) {
+            sentCount++;
+          } else {
+            remaining.push(item);
+          }
+        } catch (e) {
+          remaining.push(item);
+        }
+      }
+
+      saveQueue(remaining);
+      if (sentCount > 0) {
+        if (navigator.vibrate) navigator.vibrate([20, 60, 20]);
+        showToast(`Synced ${sentCount} queued link${sentCount > 1 ? 's' : ''} to Mac!`);
+        updateStatusBadge(true);
+      }
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health', { method: 'GET', cache: 'no-store' });
+        if (res.ok) {
+          updateStatusBadge(true);
+          await flushQueue();
+        } else {
+          updateStatusBadge(false);
+        }
+      } catch (e) {
+        updateStatusBadge(false);
+      }
+    }
+
     document.getElementById('pasteBtn').addEventListener('click', async () => {
       try {
         const text = await navigator.clipboard.readText();
@@ -126,26 +205,34 @@ pub const MOBILE_APP_HTML: &str = r###"<!DOCTYPE html>
       btn.disabled = true;
       btn.innerHTML = '<span>Beaming...</span>';
 
+      const payload = {
+        url: url,
+        preset_id: currentPreset,
+        auto_start: true
+      };
+
       try {
         const res = await fetch('/api/capture', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: url,
-            preset_id: currentPreset,
-            auto_start: true
-          })
+          body: JSON.stringify(payload)
         });
 
         if (res.ok) {
           if (navigator.vibrate) navigator.vibrate([15, 50, 15]);
           showToast('Added to Desktop Queue');
           document.getElementById('urlInput').value = '';
+          updateStatusBadge(true);
         } else {
-          showToast('Failed to queue link');
+          throw new Error('Server returned non-200');
         }
       } catch (err) {
-        showToast('Error connecting to desktop');
+        const q = getQueue();
+        q.push(payload);
+        saveQueue(q);
+        if (navigator.vibrate) navigator.vibrate(25);
+        showToast('Saved to Offline Outbox (Will beam when Mac wakes)');
+        document.getElementById('urlInput').value = '';
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<span>Send to Desktop</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
@@ -156,8 +243,15 @@ pub const MOBILE_APP_HTML: &str = r###"<!DOCTYPE html>
       const toast = document.getElementById('toast');
       document.getElementById('toastMsg').innerText = msg;
       toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2500);
+      setTimeout(() => toast.classList.remove('show'), 3000);
     }
+
+    // Auto sync on visibility change and heartbeat
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkHealth();
+    });
+    setInterval(checkHealth, 6000);
+    checkHealth();
   </script>
 </body>
 </html>"###;
