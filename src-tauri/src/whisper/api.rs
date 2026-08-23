@@ -66,7 +66,10 @@ async fn transcribe_openai_compat(
         .text("model", model.to_string())
         .text("response_format", "verbose_json")
         .text("temperature", "0")
-        .text("prompt", "Please do not transcribe any silence, background noise, or instrumental music. If there is no speech, leave the transcription completely blank.");
+        .text(
+            "prompt",
+            "Transcribe verbatim with natural punctuation, proper capitalization, and concise sentence structures. Format clean standard subtitles without filler words or repetitions.",
+        );
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -107,41 +110,7 @@ async fn transcribe_openai_compat(
         });
     }
 
-    Ok(verbose_json_to_srt(&body))
-}
-
-fn verbose_json_to_srt(json_str: &str) -> String {
-    let mut srt = String::new();
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-        if let Some(segments) = val.get("segments").and_then(|v| v.as_array()) {
-            for (i, seg) in segments.iter().enumerate() {
-                let start = seg.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let end = seg.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
-
-                srt.push_str(&format!("{}\n", i + 1));
-                srt.push_str(&format!(
-                    "{} --> {}\n",
-                    format_timestamp(start),
-                    format_timestamp(end)
-                ));
-                srt.push_str(&format!("{}\n\n", text));
-            }
-        } else if let Some(text) = val.get("text").and_then(|v| v.as_str()) {
-            srt = text.to_string();
-        }
-    } else {
-        srt = json_str.to_string();
-    }
-    srt.trim_end().to_string()
-}
-
-fn format_timestamp(seconds: f64) -> String {
-    let hours = (seconds / 3600.0) as u64;
-    let minutes = ((seconds % 3600.0) / 60.0) as u64;
-    let secs = (seconds % 60.0) as u64;
-    let millis = (seconds.fract() * 1000.0).round() as u64;
-    format!("{:02}:{:02}:{:02},{:03}", hours, minutes, secs, millis)
+    Ok(super::formatter::format_whisper_json_to_srt(&body))
 }
 
 async fn transcribe_gemini(
@@ -173,7 +142,7 @@ async fn transcribe_gemini(
     let body = serde_json::json!({
         "contents": [{
             "parts": [
-                { "text": "Transcribe this audio into SRT subtitle format with timestamps. Return only the SRT content, no other text." },
+                { "text": "Transcribe this audio verbatim into broadcast-quality SRT subtitle format with timestamps. Follow standard subtitling rules strictly: Maximum 40 characters per line, maximum 2 lines per subtitle cue (never 3+ lines covering the screen). Break lines at natural punctuation and clause boundaries. Return ONLY valid SRT text." },
                 { "inline_data": { "mime_type": "audio/mp4", "data": b64 } }
             ]
         }],

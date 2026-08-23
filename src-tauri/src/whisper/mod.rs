@@ -1,4 +1,5 @@
 pub mod api;
+pub mod formatter;
 pub mod local;
 pub mod types;
 
