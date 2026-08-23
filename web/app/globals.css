@@ -1,0 +1,318 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+    color-scheme: dark;
+    --background: transparent;
+    --foreground: #ededed;
+
+    /* Downlink brand colors - from logo (blue to cyan) */
+    --brand-blue: #2563eb;
+    --brand-blue-light: #3b82f6;
+    --brand-cyan: #06b6d4;
+    --brand-teal: #0891b2;
+
+    /* Brand gradient - matches logo arrow (blue → cyan) */
+    --brand-gradient: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-teal) 100%);
+    --brand-gradient-hover: linear-gradient(135deg, var(--brand-blue-light) 0%, var(--brand-cyan) 100%);
+
+    /* Button specific */
+    --button-primary-bg: var(--brand-blue);
+    --button-primary-hover: var(--brand-blue-light);
+
+    /* Timing */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
+
+    /* Brand colors for Tailwind */
+    --color-brand-blue: var(--brand-blue);
+    --color-brand-blue-light: var(--brand-blue-light);
+    --color-brand-cyan: var(--brand-cyan);
+    --color-brand-teal: var(--brand-teal);
+}
+
+/* Fallback semi-transparent background for Windows/Linux (Allows Mica effect to show through, or provides an 85% opacity dark glass fallback over desktop) */
+html.non-mac {
+    --background: rgba(9, 9, 11, 0.90);
+}
+
+/* ─── Base ──────────────────────────────────────────────── */
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ─── Text Selection ─────────────────────────────────────── */
+::selection {
+    background: rgba(37, 99, 235, 0.25);
+    color: inherit;
+}
+
+/* ─── Custom Scrollbar ───────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(113, 113, 122, 0.4);
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(113, 113, 122, 0.6);
+}
+
+/* ─── Cursor ─────────────────────────────────────────────── */
+button,
+[type="button"],
+[type="submit"],
+[type="reset"],
+select,
+[role="button"],
+a[href],
+label[for],
+input[type="checkbox"],
+input[type="radio"] {
+    cursor: pointer;
+}
+
+button:disabled,
+[type="button"]:disabled,
+[type="submit"]:disabled,
+select:disabled {
+    cursor: not-allowed;
+}
+
+/* ─── Brand Button ───────────────────────────────────────── */
+.btn-brand {
+    background: var(--brand-gradient);
+    color: white;
+    font-weight: 600;
+    transition: all 0.2s var(--ease-smooth);
+    border: none;
+}
+
+.btn-brand:hover:not(:disabled) {
+    background: var(--brand-gradient-hover);
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px);
+}
+
+.btn-brand:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.btn-brand:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ─── Glass Effect ───────────────────────────────────────── */
+.glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Progress Bar Shimmer (indeterminate) ───────────────── */
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(200%);
+    }
+}
+
+.progress-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.15) 50%,
+            transparent 100%);
+    animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* ─── Fade-in animation ──────────────────────────────────── */
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.25s var(--ease-smooth) both;
+}
+
+/* ─── Scale-in animation ─────────────────────────────────── */
+@keyframes scale-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-scale-in {
+    animation: scale-in 0.2s var(--ease-spring) both;
+}
+
+/* ─── Scale-out animation (Radix close) ──────────────────── */
+@keyframes scale-out {
+    from {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+
+.animate-scale-out {
+    animation: scale-out 0.1s var(--ease-smooth) both;
+}
+
+/* ─── Progress shimmer (indeterminate) fix ───────────────── */
+.progress-shimmer {
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(59, 130, 246, 0.35) 50%,
+        transparent 100%);
+    animation: shimmer 1.8s ease-in-out infinite;
+    border-radius: inherit;
+}
+
+/* ─── Status pill pulse ──────────────────────────────────── */
+@keyframes status-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.55;
+    }
+}
+
+.animate-status-pulse {
+    animation: status-pulse 1.8s ease-in-out infinite;
+}
+
+/* ─── Splash: logo entrance ──────────────────────────────── */
+@keyframes logo-entrance {
+    0%   { opacity: 0; transform: scale(0.6) translateY(16px); }
+    55%  { opacity: 1; transform: scale(1.08) translateY(-4px); }
+    75%  { transform: scale(0.97) translateY(2px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-logo-entrance {
+    animation: logo-entrance 0.85s var(--ease-spring) forwards;
+}
+
+/* ─── Splash: tagline/text slide-up ─────────────────────── */
+@keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+    animation: fade-in-up 0.5s var(--ease-smooth) both;
+}
+
+.animation-delay-150 { animation-delay: 150ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+
+/* ─── Splash: slow ring spin ─────────────────────────────── */
+@keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+    animation: spin-slow 4s linear infinite;
+}
+
+/* ─── Empty state: arrow pull-down loop ──────────────────── */
+@keyframes arrow-pull-down {
+    0%   { transform: translateY(-6px); opacity: 0.3; }
+    40%  { transform: translateY(4px);  opacity: 1; }
+    70%  { transform: translateY(8px);  opacity: 0.8; }
+    100% { transform: translateY(16px); opacity: 0; }
+}
+
+.animate-arrow-pull-down {
+    animation: arrow-pull-down 1.6s var(--ease-smooth) infinite;
+}
+
+/* ─── Empty state: icon float ────────────────────────────── */
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-6px); }
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+/* ─── Clipboard banner slide-in ─────────────────────────── */
+@keyframes slide-down {
+    from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-slide-down {
+    animation: slide-down 0.2s var(--ease-spring) both;
+}
+
+/* ─── Drag-and-drop: dragging item ──────────────────────── */
+.dnd-dragging {
+    opacity: 0.5;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(59,130,246,0.4);
+    cursor: grabbing !important;
+}
+
+.dnd-drag-overlay {
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(59,130,246,0.5);
+    scale: 1.02;
+    cursor: grabbing !important;
+}

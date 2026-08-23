@@ -1,0 +1,24 @@
+{
+  "name": "Downlink Mobile Companion",
+  "short_name": "Downlink",
+  "description": "Send video & torrent downloads to your Mac or PC from anywhere.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./downlink-square.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./downlink.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -168,12 +168,10 @@ async fn serve_status() -> Json<StatusResponse> {
     })
 }
 
-async fn handle_capture(
-    State(gateway): State<GatewayState>,
-    Json(req): Json<CaptureRequest>,
-) -> impl IntoResponse {
-    let app = gateway.app;
-    log::info!("Gateway: Captured URL from client: {}", req.url);
+pub async fn process_captured_download(
+    app: &AppHandle,
+    req: CaptureRequest,
+) -> Result<uuid::Uuid, String> {
     let state = app.state::<AppState>();
 
     let raw_url = req.url.trim().to_string();
@@ -195,14 +193,7 @@ async fn handle_capture(
     let target_url = crate::ytdlp::extract_dailymotion_canonical_url(&clean_healed)
         .unwrap_or(clean_healed);
     if target_url.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(CaptureResponse {
-                success: false,
-                id: None,
-                message: "Empty URL provided".to_string(),
-            }),
-        );
+        return Err("Empty URL provided".to_string());
     }
 
     let (output_dir, default_auto_start) = {
@@ -245,16 +236,7 @@ async fn handle_capture(
                 }
                 id
             }
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(CaptureResponse {
-                        success: false,
-                        id: None,
-                        message: format!("Database error: {}", e),
-                    }),
-                );
-            }
+            Err(e) => return Err(format!("Database error: {}", e)),
         }
     };
 
@@ -280,16 +262,37 @@ async fn handle_capture(
 
     let should_auto_start = req.auto_start.unwrap_or(default_auto_start);
     if should_auto_start {
-        let manager = crate::get_or_init_download_manager(&state, &app).await;
+        let manager = crate::get_or_init_download_manager(&state, app).await;
         let _ = manager.start(id).await;
     }
 
-    (
-        StatusCode::OK,
-        Json(CaptureResponse {
-            success: true,
-            id: Some(id.to_string()),
-            message: "Download added successfully to Downlink".to_string(),
-        }),
-    )
+    Ok(id)
 }
+
+async fn handle_capture(
+    State(gateway): State<GatewayState>,
+    Json(req): Json<CaptureRequest>,
+) -> impl IntoResponse {
+    let app = gateway.app;
+    log::info!("Gateway: Captured URL from client: {}", req.url);
+
+    match process_captured_download(&app, req).await {
+        Ok(id) => (
+            StatusCode::OK,
+            Json(CaptureResponse {
+                success: true,
+                id: Some(id.to_string()),
+                message: "Download added successfully to Downlink".to_string(),
+            }),
+        ),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(CaptureResponse {
+                success: false,
+                id: None,
+                message: e,
+            }),
+        ),
+    }
+}
+

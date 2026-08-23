@@ -484,7 +484,8 @@ pub fn run() {
             commands::tools::transcribe_file,
             // Cross-device Continuity
             commands::continuity::get_nearby_devices,
-            commands::continuity::handoff_download,
+            commands::continuity::get_cloud_relay_info,
+            commands::continuity::rotate_cloud_room_code,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

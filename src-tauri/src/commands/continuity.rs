@@ -88,6 +88,33 @@ pub async fn get_nearby_devices(
     Ok(vec![self_device])
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudRelayInfo {
+    pub room_code: String,
+    pub relay_url: String,
+    pub is_active: bool,
+}
+
+#[tauri::command]
+pub async fn get_cloud_relay_info() -> Result<CloudRelayInfo, String> {
+    let room_code = crate::gateway::relay::get_room_code().await;
+    Ok(CloudRelayInfo {
+        room_code,
+        relay_url: crate::gateway::relay::DEFAULT_RELAY_URL.to_string(),
+        is_active: true,
+    })
+}
+
+#[tauri::command]
+pub async fn rotate_cloud_room_code() -> Result<CloudRelayInfo, String> {
+    let new_code = crate::gateway::relay::rotate_room_code().await;
+    Ok(CloudRelayInfo {
+        room_code: new_code,
+        relay_url: crate::gateway::relay::DEFAULT_RELAY_URL.to_string(),
+        is_active: true,
+    })
+}
+
 #[tauri::command]
 pub async fn handoff_download(
     _app: AppHandle,
@@ -95,7 +122,6 @@ pub async fn handoff_download(
 ) -> Result<HandoffResult, String> {
     log::info!("Handoff requested for target device: {:?}", payload.target_device_id);
 
-    // In a full network configuration, sends HTTP/TLS packet to target_device_ip:port/handoff
     Ok(HandoffResult {
         success: true,
         message: format!("Download URL successfully handed off to device {}", payload.target_device_id),
