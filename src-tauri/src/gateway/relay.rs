@@ -6,7 +6,7 @@ use super::CaptureRequest;
 
 static ACTIVE_ROOM_CODE: OnceLock<RwLock<String>> = OnceLock::new();
 static RELAY_ACTIVE: AtomicBool = AtomicBool::new(false);
-pub const DEFAULT_RELAY_URL: &str = "https://relay.downlink.app";
+pub const DEFAULT_RELAY_URL: &str = "https://downlink-web.vercel.app";
 
 fn get_room_lock() -> &'static RwLock<String> {
     ACTIVE_ROOM_CODE.get_or_init(|| {
@@ -54,7 +54,7 @@ pub fn start_relay_service(app: AppHandle) {
         loop {
             let room_code = get_room_code().await;
             let relay_url = DEFAULT_RELAY_URL.trim_end_matches('/');
-            let poll_url = format!("{}/api/relay/{}/poll", relay_url, urlencoding::encode(&room_code));
+            let poll_url = format!("{}/api/relay/{}", relay_url, urlencoding::encode(&room_code));
 
             match client.get(&poll_url).send().await {
                 Ok(response) => {

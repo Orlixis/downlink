@@ -38,7 +38,7 @@ export function ContinuityTab() {
         setInfo(res);
 
         const room = res.relay_code || res.room_code || "DL-9482";
-        const hostedUrl = `https://orlixis.github.io/downlink/mobile?ip=${res.ip}:${res.port}&room=${room}`;
+        const hostedUrl = `https://downlink-web.vercel.app/mobile?ip=${res.ip}:${res.port}&room=${room}`;
         const qr = await QRCode.toDataURL(hostedUrl, {
           width: 320,
           margin: 1,

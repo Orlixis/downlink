@@ -32,8 +32,8 @@ pub fn get_local_connection_info() -> ConnectionInfo {
     let pairing_url = format!("http://{}:{}/mobile", local_ip, port);
     let mdns_name = format!("{}.local", hostname);
     let mdns_url = format!("http://{}:{}/mobile", mdns_name, port);
-    let relay_code = "DL-9482".to_string();
-    let relay_url = format!("http://{}:{}/mobile?relay={}", local_ip, port, relay_code);
+    let relay_code = crate::gateway::relay::get_room_code_sync();
+    let relay_url = format!("https://downlink-web.vercel.app/mobile?ip={}:{}&room={}", local_ip, port, relay_code);
 
     ConnectionInfo {
         ip: local_ip,
