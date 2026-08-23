@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.63](https://github.com/Orlixis/downlink/compare/v0.1.62...v0.1.63) (2026-08-23)
+
+
+### Features
+
+* implement torrent metadata extraction, enhance link capture, and improve window lifecycle management. ([2066898](https://github.com/Orlixis/downlink/commit/2066898a27ad169948354dc6b3d0b7c28a7843bc))
+
 ### [0.1.62](https://github.com/Orlixis/downlink/compare/v0.1.61...v0.1.62) (2026-08-23)
 
 
