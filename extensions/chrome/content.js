@@ -1017,6 +1017,32 @@
     );
   });
 
+  // Automatic 1-Click Torrent & Magnet Interceptor
+  document.addEventListener(
+    'click',
+    (e) => {
+      const link = e.target.closest('a[href]');
+      if (!link) return;
+      const href = link.getAttribute('href');
+      if (!href) return;
+
+      if (href.startsWith('magnet:?') || (href.startsWith('http') && href.toLowerCase().endsWith('.torrent'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        chrome.runtime.sendMessage({
+          type: 'CAPTURE_URL',
+          url: href,
+          options: {
+            title: link.getAttribute('title') || link.innerText.trim() || document.title,
+            referer: window.location.href,
+            autoStart: true
+          }
+        });
+      }
+    },
+    true
+  );
+
   // Start continuous scanner
   function start() {
     initDock();
@@ -1039,3 +1065,4 @@
     start();
   }
 })();
+

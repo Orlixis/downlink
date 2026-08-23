@@ -31,6 +31,36 @@ pub async fn get_torrent_session(default_output_dir: &Path) -> Result<Arc<Sessio
         .cloned()
 }
 
+const FAST_PUBLIC_TRACKERS: &[&str] = &[
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.tracker.cl:1337/announce",
+    "udp://9.rarbg.to:2710/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "udp://tracker.moeking.me:6969/announce",
+    "http://tracker.openbittorrent.com:80/announce",
+    "udp://explodie.org:6969/announce",
+    "udp://tracker.dler.org:6969/announce",
+];
+
+/// Enriches a magnet URI with tier-1 high-availability public trackers to maximize peer discovery speed.
+pub fn enrich_magnet_uri(raw_url: &str) -> String {
+    if !raw_url.starts_with("magnet:?") {
+        return raw_url.to_string();
+    }
+
+    let mut enriched = raw_url.to_string();
+    for tracker in FAST_PUBLIC_TRACKERS {
+        let encoded_tr = urlencoding::encode(tracker);
+        let param = format!("&tr={}", encoded_tr);
+        if !enriched.contains(&param) && !enriched.contains(tracker) {
+            enriched.push_str(&param);
+        }
+    }
+    enriched
+}
+
 /// Execute a BitTorrent download (Magnet link, .torrent file, or HTTP torrent).
 pub async fn execute_torrent_download(
     id: Uuid,
@@ -47,11 +77,17 @@ pub async fn execute_torrent_download(
 
     let session = get_torrent_session(&out_path).await?;
 
-    let add_torrent = if url.starts_with("magnet:") {
-        AddTorrent::from_url(url)
-    } else if let Ok(parsed_url) = url::Url::parse(url) {
+    let effective_url = if url.starts_with("magnet:") {
+        enrich_magnet_uri(url)
+    } else {
+        url.to_string()
+    };
+
+    let add_torrent = if effective_url.starts_with("magnet:") {
+        AddTorrent::from_url(&effective_url)
+    } else if let Ok(parsed_url) = url::Url::parse(&effective_url) {
         if parsed_url.scheme() == "http" || parsed_url.scheme() == "https" {
-            AddTorrent::from_url(url)
+            AddTorrent::from_url(&effective_url)
         } else if parsed_url.scheme() == "file" {
             if let Ok(file_path) = parsed_url.to_file_path() {
                 let bytes = tokio::fs::read(&file_path).await.map_err(|e| {
@@ -63,13 +99,13 @@ pub async fn execute_torrent_download(
                 })?;
                 AddTorrent::from_bytes(bytes)
             } else {
-                AddTorrent::from_url(url)
+                AddTorrent::from_url(&effective_url)
             }
         } else {
-            AddTorrent::from_url(url)
+            AddTorrent::from_url(&effective_url)
         }
-    } else if Path::new(url).exists() {
-        let bytes = tokio::fs::read(url).await.map_err(|e| {
+    } else if Path::new(&effective_url).exists() {
+        let bytes = tokio::fs::read(&effective_url).await.map_err(|e| {
             DownloadError::Failed {
                 code: ErrorCode::Unknown,
                 message: format!("Failed to read .torrent file: {}", e),
@@ -78,7 +114,7 @@ pub async fn execute_torrent_download(
         })?;
         AddTorrent::from_bytes(bytes)
     } else {
-        AddTorrent::from_url(url)
+        AddTorrent::from_url(&effective_url)
     };
 
     let add_opts = AddTorrentOptions {

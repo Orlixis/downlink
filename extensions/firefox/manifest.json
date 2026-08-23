@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Downlink — Media Downloader Companion",
-  "version": "0.1.58",
+  "version": "0.1.59",
   "description": "Capture videos, playlists, audio streams, and web media directly into Downlink Desktop with 1 click.",
   "browser_specific_settings": {
     "gecko": {
