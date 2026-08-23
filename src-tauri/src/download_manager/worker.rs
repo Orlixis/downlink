@@ -48,7 +48,7 @@ pub async fn run_download_worker(
             let active = active_downloads.read().await;
             active.get(&id).map(|tx| tx.subscribe())
         };
-        let cancel_rx = match cancel_rx {
+        let mut cancel_rx = match cancel_rx {
             Some(rx) => rx,
             None => {
                 log::info!(
@@ -60,19 +60,35 @@ pub async fn run_download_worker(
             }
         };
 
-        let res = execute_download(
-            id,
-            &target_url,
-            effective_referer,
-            custom_title.as_deref(),
-            &preset_id,
-            &output_dir,
-            config.clone(),
-            cancel_rx,
-            event_tx.clone(),
-            was_stopped && attempt == 0,
-        )
-        .await;
+        let is_torrent = target_url.starts_with("magnet:")
+            || target_url.ends_with(".torrent")
+            || target_url.contains("xt=urn:btih:");
+
+        let res = if is_torrent {
+            super::torrent::execute_torrent_download(
+                id,
+                &target_url,
+                custom_title.as_deref(),
+                &output_dir,
+                &mut cancel_rx,
+                event_tx.clone(),
+            )
+            .await
+        } else {
+            execute_download(
+                id,
+                &target_url,
+                effective_referer,
+                custom_title.as_deref(),
+                &preset_id,
+                &output_dir,
+                config.clone(),
+                cancel_rx,
+                event_tx.clone(),
+                was_stopped && attempt == 0,
+            )
+            .await
+        };
 
         match &res {
             Ok(_) => break res,

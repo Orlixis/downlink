@@ -158,6 +158,36 @@ export function useUrlPreviews({
       }
     }
 
+    if (url.toLowerCase().endsWith(".torrent")) {
+      const fileName = url.split("/").pop()?.replace(/\.torrent$/i, "") || "BitTorrent Package";
+      const title = decodeURIComponent(fileName).replace(/\+/g, " ");
+      setUrlPreviews((prev) => {
+        const next = new Map(prev);
+        next.set(url, {
+          url,
+          loading: false,
+          data: {
+            id: url,
+            url,
+            title,
+            uploader: "BitTorrent File",
+            duration_seconds: null,
+            thumbnail_url: null,
+            is_playlist: false,
+            stream_url: null,
+            filesize_bytes: null,
+            playlist_title: null,
+            playlist_count_hint: null,
+            available_qualities: [],
+          },
+          error: null,
+          presetId,
+        });
+        return next;
+      });
+      return;
+    }
+
     setUrlPreviews((prev) => {
       const next = new Map(prev);
       next.set(url, {

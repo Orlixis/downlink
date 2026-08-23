@@ -3,6 +3,7 @@ pub mod executor;
 pub mod fixup;
 pub mod janitor;
 pub mod progress;
+pub mod torrent;
 pub mod types;
 pub mod worker;
 

@@ -1,0 +1,210 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use librqbit::{
+    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Session, SessionOptions,
+};
+use tokio::sync::{broadcast, mpsc, OnceCell};
+use uuid::Uuid;
+
+use super::types::DownloadError;
+use crate::events::{DownlinkEvent, DownloadStatus, ErrorCode, Phase, Progress};
+
+static TORRENT_SESSION: OnceCell<Arc<Session>> = OnceCell::const_new();
+
+/// Get or initialize the global shared BitTorrent session.
+pub async fn get_torrent_session(default_output_dir: &Path) -> Result<Arc<Session>, DownloadError> {
+    TORRENT_SESSION
+        .get_or_try_init(|| async {
+            let opts = SessionOptions::default();
+            Session::new_with_opts(default_output_dir.to_path_buf(), opts)
+                .await
+                .map_err(|e| {
+                    DownloadError::Failed {
+                        code: ErrorCode::Unknown,
+                        message: format!("Failed to initialize BitTorrent engine: {}", e),
+                        actions: Vec::new(),
+                    }
+                })
+        })
+        .await
+        .cloned()
+}
+
+/// Execute a BitTorrent download (Magnet link, .torrent file, or HTTP torrent).
+pub async fn execute_torrent_download(
+    id: Uuid,
+    url: &str,
+    _custom_title: Option<&str>,
+    output_dir: &str,
+    cancel_rx: &mut broadcast::Receiver<()>,
+    event_tx: mpsc::Sender<DownlinkEvent>,
+) -> Result<Option<String>, DownloadError> {
+    let out_path = PathBuf::from(output_dir);
+    if !out_path.exists() {
+        let _ = tokio::fs::create_dir_all(&out_path).await;
+    }
+
+    let session = get_torrent_session(&out_path).await?;
+
+    let add_torrent = if url.starts_with("magnet:") {
+        AddTorrent::from_url(url)
+    } else if let Ok(parsed_url) = url::Url::parse(url) {
+        if parsed_url.scheme() == "http" || parsed_url.scheme() == "https" {
+            AddTorrent::from_url(url)
+        } else if parsed_url.scheme() == "file" {
+            if let Ok(file_path) = parsed_url.to_file_path() {
+                let bytes = tokio::fs::read(&file_path).await.map_err(|e| {
+                    DownloadError::Failed {
+                        code: ErrorCode::Unknown,
+                        message: format!("Failed to read .torrent file: {}", e),
+                        actions: Vec::new(),
+                    }
+                })?;
+                AddTorrent::from_bytes(bytes)
+            } else {
+                AddTorrent::from_url(url)
+            }
+        } else {
+            AddTorrent::from_url(url)
+        }
+    } else if Path::new(url).exists() {
+        let bytes = tokio::fs::read(url).await.map_err(|e| {
+            DownloadError::Failed {
+                code: ErrorCode::Unknown,
+                message: format!("Failed to read .torrent file: {}", e),
+                actions: Vec::new(),
+            }
+        })?;
+        AddTorrent::from_bytes(bytes)
+    } else {
+        AddTorrent::from_url(url)
+    };
+
+    let add_opts = AddTorrentOptions {
+        output_folder: Some(output_dir.to_string()),
+        overwrite: true,
+        ..Default::default()
+    };
+
+    log::info!("Adding torrent to session for task {}: {}", id, url);
+    let handle = match session.add_torrent(add_torrent, Some(add_opts)).await {
+        Ok(AddTorrentResponse::Added(_, handle)) => handle,
+        Ok(AddTorrentResponse::AlreadyManaged(_, handle)) => handle,
+        Ok(AddTorrentResponse::ListOnly(_)) => {
+            return Err(DownloadError::Failed {
+                code: ErrorCode::Unknown,
+                message: "Torrent returned list only".to_string(),
+                actions: Vec::new(),
+            });
+        }
+        Err(e) => {
+            return Err(DownloadError::Failed {
+                code: ErrorCode::Network,
+                message: format!("Failed to parse or add magnet link: {}", e),
+                actions: Vec::new(),
+            });
+        }
+    };
+
+    let _ = event_tx
+        .send(DownlinkEvent::DownloadProgress {
+            id,
+            status: DownloadStatus::Downloading,
+            progress: Progress {
+                percent: Some(0.0),
+                bytes_downloaded: Some(0),
+                bytes_total: None,
+                speed_bps: Some(0),
+                eta_seconds: None,
+                phase: Some(Phase {
+                    name: "Connecting to BitTorrent swarm...".to_string(),
+                    detail: Some("Discovering peers via DHT".to_string()),
+                }),
+            },
+        })
+        .await;
+
+    let mut last_downloaded: u64 = 0;
+    let mut last_time = Instant::now();
+    let mut check_interval = tokio::time::interval(Duration::from_millis(350));
+
+    loop {
+        tokio::select! {
+            _ = cancel_rx.recv() => {
+                log::info!("Cancellation received for torrent task {}", id);
+                let _ = session.delete(TorrentIdOrHash::Id(handle.id()), false).await;
+                return Err(DownloadError::Canceled);
+            }
+            _ = check_interval.tick() => {
+                let stats = handle.stats();
+                let downloaded = stats.progress_bytes;
+                let total = stats.total_bytes;
+                let is_finished = stats.finished;
+
+                let now = Instant::now();
+                let elapsed_secs = now.duration_since(last_time).as_secs_f64();
+                let speed_bps = if elapsed_secs > 0.0 && downloaded >= last_downloaded {
+                    ((downloaded - last_downloaded) as f64 / elapsed_secs) as u64
+                } else {
+                    0
+                };
+
+                let peers_count = stats.live.as_ref().map(|s| s.snapshot.peer_stats.live).unwrap_or(0);
+
+                let percent = if total > 0 {
+                    (downloaded as f64 / total as f64 * 100.0).clamp(0.0, 100.0)
+                } else if is_finished {
+                    100.0
+                } else {
+                    0.0
+                };
+
+                let eta = if speed_bps > 0 && total > downloaded {
+                    Some((total - downloaded) / speed_bps)
+                } else {
+                    None
+                };
+
+                let phase_label = if is_finished {
+                    "BitTorrent download complete".to_string()
+                } else if peers_count > 0 {
+                    format!("Downloading from {} peers", peers_count)
+                } else {
+                    "Discovering DHT swarms & peers...".to_string()
+                };
+
+                if downloaded != last_downloaded || is_finished {
+                    last_downloaded = downloaded;
+                    last_time = now;
+
+                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                        id,
+                        status: if is_finished { DownloadStatus::Done } else { DownloadStatus::Downloading },
+                        progress: Progress {
+                            percent: Some(percent),
+                            bytes_downloaded: Some(downloaded),
+                            bytes_total: if total > 0 { Some(total) } else { None },
+                            speed_bps: Some(speed_bps),
+                            eta_seconds: eta,
+                            phase: Some(Phase {
+                                name: phase_label,
+                                detail: None,
+                            }),
+                        },
+                    }).await;
+                }
+
+                if is_finished {
+                    log::info!("Torrent task {} finished successfully", id);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Determine output directory / path
+    let final_path = Some(output_dir.to_string());
+
+    Ok(final_path)
+}
