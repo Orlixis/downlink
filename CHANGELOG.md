@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.66](https://github.com/Orlixis/downlink/compare/v0.1.65...v0.1.66) (2026-08-23)
+
+
+### Features
+
+* **sponsorblock:** dynamically honor user SponsorBlock mode (--sponsorblock-remove vs --sponsorblock-mark) and custom category selection in executor ([7493ebe](https://github.com/Orlixis/downlink/commit/7493ebeef172dd7b2519ce819db72f4767264927))
+* **subtitles:** add VAD silence suppression, background noise exclusion, and hallucination repetition filters ([ee24277](https://github.com/Orlixis/downlink/commit/ee2427794e846b3f5372c05d4bddd1a228860e75))
+* **subtitles:** implement cinema & Netflix standard sentence-by-sentence subtitle splitting, line balancing, and phrase timing ([13b6bd8](https://github.com/Orlixis/downlink/commit/13b6bd8253c4282b1612cf2c158a5e23f42b5776))
+
+
+### Bug Fixes
+
+* **settings:** overhaul SponsorBlockTab with tactile button cards, reliable null-safe click toggles, mode switcher, and select-all actions ([a9a21d7](https://github.com/Orlixis/downlink/commit/a9a21d7ebf268fe107b1d361100c70d248ee5625))
+* **state:** stabilize fullstack settings lifecycle, prevent background state overwriting user clicks, and upgrade SubtitlesTab with interactive controls ([ad3e231](https://github.com/Orlixis/downlink/commit/ad3e231df7ae652e4898ca8226227ea7cd45efc5))
+* **subtitles:** request word-level timestamps, tighten VAD/logprob/compression gates, drop biased prompt ([877edab](https://github.com/Orlixis/downlink/commit/877edabeb990897c04098a1c29db544c6cf13e29))
+* **transcription:** read DOWNLINK_GROQ_KEY from root .env at build time and runtime with clean error diagnostics ([77217d0](https://github.com/Orlixis/downlink/commit/77217d0de978bf25d4272b018c2adf499cd13b02))
+
 ### [0.1.65](https://github.com/Orlixis/downlink/compare/v0.1.64...v0.1.65) (2026-08-23)
 
 
