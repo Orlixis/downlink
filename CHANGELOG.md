@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.60](https://github.com/Orlixis/downlink/compare/v0.1.59...v0.1.60) (2026-08-23)
+
+
+### Features
+
+* add BitTorrent download support using rqbit and update URL preview hook ([6e3f6a0](https://github.com/Orlixis/downlink/commit/6e3f6a009dc08a9e3f4cf19136718e4b5e3366b6))
+
 ### [0.1.59](https://github.com/Orlixis/downlink/compare/v0.1.58...v0.1.59) (2026-08-23)
 
 ### [0.1.58](https://github.com/Orlixis/downlink/compare/v0.1.57...v0.1.58) (2026-08-22)
