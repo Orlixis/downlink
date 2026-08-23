@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.62](https://github.com/Orlixis/downlink/compare/v0.1.61...v0.1.62) (2026-08-23)
+
+
+### Features
+
+* implement multi-tier connectivity with relay, mDNS, and LAN modes in the continuity settings tab ([b19a571](https://github.com/Orlixis/downlink/commit/b19a571f9aaa3855090d85296fc912df5ca303c2))
+* implement offline queue for mobile gateway with auto-sync and update extension versions ([1354379](https://github.com/Orlixis/downlink/commit/1354379dfc643a15426f5de587b2f8c9345454d6))
+* implement service worker and manifest for offline PWA support ([4ef3c17](https://github.com/Orlixis/downlink/commit/4ef3c17f44d0f23faf9058e5eca4d4daadca6c6a))
+
 ### [0.1.61](https://github.com/Orlixis/downlink/compare/v0.1.60...v0.1.61) (2026-08-23)
 
 
