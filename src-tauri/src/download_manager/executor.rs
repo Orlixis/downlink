@@ -8,6 +8,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use uuid::Uuid;
 
 #[cfg(windows)]
+#[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]

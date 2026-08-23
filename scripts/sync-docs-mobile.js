@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Copies the Next.js exported mobile companion PWA from out/mobile.html to docs/mobile/index.html
- * and syncs _next static assets for deployment to GitHub Pages.
+ * Copies the Next.js exported mobile companion PWA from out/mobile.html to docs/mobile/index.html,
+ * converts all asset paths to relative paths (for GitHub Pages subpaths), and syncs _next static assets.
  */
 
 const fs = require('fs');
@@ -17,13 +17,21 @@ const publicDir = path.join(rootDir, 'public');
 // Ensure docs/mobile directory exists
 fs.mkdirSync(docsMobileDir, { recursive: true });
 
-// 1. Copy out/mobile.html -> docs/mobile/index.html
+// 1. Copy out/mobile.html -> docs/mobile/index.html and rewrite absolute paths to relative
 const outMobileHtml = path.join(outDir, 'mobile.html');
 const docsMobileIndex = path.join(docsMobileDir, 'index.html');
 
 if (fs.existsSync(outMobileHtml)) {
-  fs.copyFileSync(outMobileHtml, docsMobileIndex);
-  console.log('[sync-mobile] Copied out/mobile.html -> docs/mobile/index.html');
+  let html = fs.readFileSync(outMobileHtml, 'utf8');
+
+  // Replace absolute root /_next/ paths with ../_next/ for GitHub Pages subpath compatibility
+  html = html.replace(/(["'])\/_next\//g, '$1../_next/');
+  html = html.replace(/href=["']\/mobile-manifest\.json["']/g, 'href="./mobile-manifest.json"');
+  html = html.replace(/href=["']\/downlink\.svg["']/g, 'href="./downlink.svg"');
+  html = html.replace(/href=["']\/favicon\.ico([^"']*)["']/g, 'href="../favicon.ico$1"');
+
+  fs.writeFileSync(docsMobileIndex, html, 'utf8');
+  console.log('[sync-mobile] Copied & patched out/mobile.html -> docs/mobile/index.html (relative assets)');
 }
 
 // 2. Sync _next static chunks to docs/_next for GitHub Pages
@@ -36,7 +44,14 @@ if (fs.existsSync(outNextDir)) {
   console.log('[sync-mobile] Copied out/_next -> docs/_next');
 }
 
-// 3. Copy PWA manifest and service worker
+// 3. Ensure docs/.nojekyll exists so GitHub Pages serves _next assets without Jekyll interference
+const nojekyllPath = path.join(docsDir, '.nojekyll');
+if (!fs.existsSync(nojekyllPath)) {
+  fs.writeFileSync(nojekyllPath, '# Prevent GitHub Pages from using Jekyll\n', 'utf8');
+  console.log('[sync-mobile] Created docs/.nojekyll');
+}
+
+// 4. Copy PWA manifest and service worker
 const filesToCopy = ['mobile-sw.js', 'mobile-manifest.json', 'downlink.svg', 'downlink-square.png'];
 filesToCopy.forEach((filename) => {
   const src = path.join(publicDir, filename);
@@ -46,7 +61,7 @@ filesToCopy.forEach((filename) => {
   }
 });
 
-// 4. Remove any Next.js Turbopack .txt flight metadata files in docs/mobile
+// 5. Remove any Next.js Turbopack .txt flight metadata files in docs/mobile
 if (fs.existsSync(docsMobileDir)) {
   const entries = fs.readdirSync(docsMobileDir);
   entries.forEach((entry) => {

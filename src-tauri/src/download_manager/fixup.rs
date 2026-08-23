@@ -5,6 +5,7 @@ use base64::Engine;
 use tokio::process::Command;
 
 #[cfg(windows)]
+#[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]

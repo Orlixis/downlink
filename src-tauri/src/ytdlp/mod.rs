@@ -7,6 +7,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 #[cfg(windows)]
+#[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
