@@ -605,6 +605,51 @@ async fn execute_download_inner(
             )).await;
         }
 
+        // TikTok Engine Fallback Bypass (when yt-dlp is blocked by TikTok's JS challenge)
+        if url.contains("tiktok.com") {
+            log::warn!("TikTok Engine Bypass: yt-dlp failed, querying fallback stream resolver for {}", url);
+            if let Some((direct_mp4, title, _)) = crate::ytdlp::sniffer::resolve_tiktok_fallback(url).await {
+                let safe_title = sanitize_filename::sanitize(&title);
+                let file_name = if safe_title.is_empty() { format!("TikTok_{}", id) } else { safe_title };
+                let final_fallback_path = format!("{}/{}.mp4", output_dir, file_name);
+
+                let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+                if let Some(ffmpeg_bin) = ffmpeg_path {
+                    let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                    ffmpeg_cmd.args(["-i", &direct_mp4, "-c", "copy", "-y", &final_fallback_path]);
+
+                    #[cfg(windows)]
+                    ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                        id,
+                        status: DownloadStatus::Downloading,
+                        progress: Progress {
+                            percent: Some(50.0),
+                            bytes_downloaded: None,
+                            bytes_total: None,
+                            speed_bps: None,
+                            eta_seconds: None,
+                            phase: Some(Phase {
+                                name: "Downloading via TikTok Bypass...".to_string(),
+                                detail: None,
+                            }),
+                        },
+                    }).await;
+
+                    if let Ok(mut child) = ffmpeg_cmd.spawn() {
+                        let _ = child.wait().await;
+                        if let Ok(meta) = std::fs::metadata(&final_fallback_path) {
+                            if meta.len() > 0 {
+                                log::info!("TikTok fallback download successful! Saved to {}", final_fallback_path);
+                                return Ok(Some(final_fallback_path));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if url.contains(".m3u8") || url.contains(".mp4") {
             log::warn!("Tier 4 Bypass: yt-dlp failed, falling back to raw ffmpeg bypass for {}", url);
             let final_fallback_path = format!("{}/downlink_raw_{}.mp4", output_dir, id);

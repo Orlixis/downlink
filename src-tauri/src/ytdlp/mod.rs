@@ -189,6 +189,26 @@ impl YtDlpRunner {
                     }
                 }
 
+                // TikTok dedicated fallback preview
+                if url.contains("tiktok.com") {
+                    if let Some((direct_stream, title, cover)) = crate::ytdlp::sniffer::resolve_tiktok_fallback(url).await {
+                        log::info!("Tier 2.5: TikTok fallback resolved direct stream: {}", direct_stream);
+                        return Ok(PreviewMetadata {
+                            url: url.to_string(),
+                            stream_url: Some(direct_stream),
+                            title: Some(title),
+                            uploader: Some("TikTok Creator".to_string()),
+                            duration_seconds: None,
+                            thumbnail_url: cover,
+                            filesize_bytes: None,
+                            is_playlist: false,
+                            playlist_title: None,
+                            playlist_count_hint: None,
+                            available_qualities: vec![],
+                        });
+                    }
+                }
+
                 if let Some(app_handle) = app {
                     if let Some(mut sniffed_url) = advanced_webview_sniffer(app_handle, url).await {
                         log::info!("Tier 3: Found sniffed URL: {}. Extracting metadata...", sniffed_url);

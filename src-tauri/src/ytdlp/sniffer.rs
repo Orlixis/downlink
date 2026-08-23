@@ -325,3 +325,40 @@ pub async fn advanced_webview_sniffer(app: &tauri::AppHandle, url: &str) -> Opti
 
     result
 }
+
+/// Fallback resolver for TikTok videos when yt-dlp is blocked by rehydration challenges.
+pub async fn resolve_tiktok_fallback(url: &str) -> Option<(String, String, Option<String>)> {
+    if !url.contains("tiktok.com") {
+        return None;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
+        .ok()?;
+
+    let endpoint = format!("https://www.tikwm.com/api/?url={}", urlencoding::encode(url));
+    let resp = client.get(&endpoint).send().await.ok()?;
+    let json: serde_json::Value = resp.json().await.ok()?;
+
+    if json.get("code").and_then(|c| c.as_i64()) == Some(0) {
+        if let Some(data) = json.get("data") {
+            let play_url = data.get("play").and_then(|p| p.as_str())?.to_string();
+            let title = data
+                .get("title")
+                .and_then(|t| t.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("TikTok Video")
+                .to_string();
+            let cover = data
+                .get("cover")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string());
+            log::info!("[TikTok Fallback] Successfully resolved direct stream for: {}", url);
+            return Some((play_url, title, cover));
+        }
+    }
+    None
+}
+
