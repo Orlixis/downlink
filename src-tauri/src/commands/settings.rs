@@ -56,6 +56,7 @@ pub async fn save_settings(
             default_output_template: settings.formats.filename_template,
             yt_dlp_path,
             ffmpeg_path,
+            sponsorblock: Some(settings.sponsorblock),
         };
         manager.update_config(new_config).await;
         log::info!("Updated download manager config");

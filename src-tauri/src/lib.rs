@@ -130,6 +130,7 @@ pub async fn get_or_init_download_manager(
         ffmpeg_path: ffmpeg_path.or_else(download_manager::find_ffmpeg_binary),
         max_concurrent: settings.general.concurrency as usize,
         default_output_template: settings.formats.filename_template,
+        sponsorblock: Some(settings.sponsorblock),
     };
     let manager = Arc::new(DownloadManager::new(config, state.db.clone(), event_tx));
     manager.start_completion_listener();

@@ -64,7 +64,9 @@ async fn execute_download_inner(
     throttled: bool,
 ) -> std::result::Result<Option<String>, DownloadError> {
     let wants_subtitles = preset_id.contains("+subs");
-    let wants_sponsorblock = preset_id.contains("+sb");
+    let sb_settings = config.read().await.sponsorblock.clone();
+    let default_sb_enabled = sb_settings.as_ref().map(|s| s.enabled_by_default).unwrap_or(false);
+    let wants_sponsorblock = preset_id.contains("+sb") || default_sb_enabled;
     let wants_meta = preset_id.contains("+meta");
 
     let trim_section: Option<String> = {
@@ -222,11 +224,27 @@ async fn execute_download_inner(
     }
 
     if wants_sponsorblock {
+        let (mode_flag, categories_str) = if let Some(ref sb) = sb_settings {
+            let flag = if sb.mode.eq_ignore_ascii_case("mark") {
+                "--sponsorblock-mark"
+            } else {
+                "--sponsorblock-remove"
+            };
+            let cats = if sb.categories.is_empty() {
+                "sponsor,selfpromo,interaction,intro,outro".to_string()
+            } else {
+                sb.categories.join(",")
+            };
+            (flag, cats)
+        } else {
+            ("--sponsorblock-remove", "sponsor,selfpromo,interaction,intro,outro".to_string())
+        };
+
         args.extend([
-            "--sponsorblock-remove".to_string(),
-            "sponsor,selfpromo,interaction,intro,outro".to_string(),
+            mode_flag.to_string(),
+            categories_str.clone(),
         ]);
-        log::info!("Download {} — SponsorBlock removal enabled", id);
+        log::info!("Download {} — SponsorBlock ({}) enabled for categories: {}", id, mode_flag, categories_str);
     }
 
     if let Some(ref section) = trim_section {
