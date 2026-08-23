@@ -171,18 +171,26 @@ async fn execute_download_inner(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".to_string(),
     ];
 
-    // YouTube-specific: sequential fragments + web player client to avoid throttled URLs.
-    // Other sites get full 16-fragment parallelism.
+    // YouTube-specific: sequential fragments + web/mweb player client + robust fragment retries
+    // to bypass YouTube's active SABR anti-bot rate-limiting and avoid HTTP 403 token revocation.
+    // Other sites get full 16-fragment multi-threaded parallelism.
     let is_youtube = url.contains("youtube.com") || url.contains("youtu.be");
     if is_youtube {
-        let frag_count = if throttled { "1" } else { "4" };
         args.extend([
             "--concurrent-fragments".to_string(),
-            frag_count.to_string(),
+            "1".to_string(),
             "--extractor-args".to_string(),
-            "youtube:player_client=web,default".to_string(),
+            "youtube:player_client=web,mweb".to_string(),
+            "--retry-sleep".to_string(),
+            "fragment:exp=1:10".to_string(),
+            "--retry-sleep".to_string(),
+            "http:exp=1:10".to_string(),
+            "--retries".to_string(),
+            "20".to_string(),
+            "--fragment-retries".to_string(),
+            "20".to_string(),
         ]);
-        log::info!("Download {} — YouTube mode: {} fragments, web player client", id, frag_count);
+        log::info!("Download {} — YouTube mode: 1 fragment (anti-throttle), web/mweb player client", id);
     } else {
         let frag_count = if throttled { "4" } else { "16" };
         args.extend([
@@ -193,8 +201,6 @@ async fn execute_download_inner(
 
     if throttled {
         args.extend([
-            "--retry-sleep".to_string(),
-            "exp=1:10:2".to_string(),
             "--sleep-requests".to_string(),
             "0.5".to_string(),
         ]);
