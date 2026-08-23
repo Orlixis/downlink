@@ -13,6 +13,7 @@ import {
   Loader2,
   Mic,
   Puzzle,
+  Smartphone,
 } from "lucide-react";
 import type { UserSettings, AppUpdateInfo } from "@/app/types";
 import { useModalAnimation } from "@/app/hooks/useModalAnimation";
@@ -25,6 +26,7 @@ import {
   NetworkTab,
   TranscriptionTab,
   BrowserTab,
+  ContinuityTab,
 } from "./tabs";
 
 type TabId =
@@ -35,7 +37,8 @@ type TabId =
   | "updates"
   | "network"
   | "transcription"
-  | "browser";
+  | "browser"
+  | "continuity";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -51,10 +54,11 @@ interface SettingsModalProps {
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "general", label: "General", icon: Settings },
+  { id: "continuity", label: "Continuity & Mobile", icon: Smartphone },
+  { id: "browser", label: "Browser Extension", icon: Puzzle },
   { id: "formats", label: "Formats", icon: FileVideo },
   { id: "sponsorblock", label: "SponsorBlock", icon: Scissors },
   { id: "subtitles", label: "Subtitles", icon: Subtitles },
-  { id: "browser", label: "Browser Extension", icon: Puzzle },
   { id: "updates", label: "Updates", icon: RefreshCw },
   { id: "network", label: "Network", icon: Globe },
   { id: "transcription", label: "Transcription", icon: Mic },
@@ -316,6 +320,7 @@ export function SettingsModal({
             )}
 
             {activeTab === "browser" && <BrowserTab />}
+            {activeTab === "continuity" && <ContinuityTab />}
           </div>
         </div>
 

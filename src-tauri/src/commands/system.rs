@@ -41,6 +41,12 @@ pub fn extract_urls_from_text(text: String) -> Vec<String> {
 }
 
 #[tauri::command]
+pub fn get_continuity_info() -> crate::gateway::discovery::ConnectionInfo {
+    crate::gateway::discovery::get_local_connection_info()
+}
+
+
+#[tauri::command]
 pub async fn open_file(path: String) -> Result<(), String> {
     let path = PathBuf::from(&path);
 

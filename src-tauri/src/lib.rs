@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use uuid::Uuid;
 
@@ -244,6 +244,37 @@ pub fn run() {
                     .build(),
             )?;
 
+            app.handle().plugin(tauri_plugin_deep_link::init())?;
+
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle_clone = app.handle().clone();
+                let _ = app.deep_link().on_open_url(move |event| {
+                    let urls = event.urls();
+                    log::info!("Deep link received: {:?}", urls);
+                    for url in urls {
+                        let url_str = url.to_string();
+                        if let Some(win) = handle_clone.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.unminimize();
+                            let _ = win.set_focus();
+                        }
+                        if let Some(target) = url_str.strip_prefix("downlink://capture?url=")
+                            .or_else(|| url_str.strip_prefix("downlink://download?url="))
+                            .or_else(|| url_str.strip_prefix("downlink://magnet?url="))
+                            .or_else(|| url_str.strip_prefix("downlink://"))
+                        {
+                            let decoded = urlencoding::decode(target).unwrap_or(std::borrow::Cow::Borrowed(target)).to_string();
+                            let _ = handle_clone.emit("browser-link-captured", serde_json::json!({
+                                "url": decoded,
+                                "auto_start": true,
+                            }));
+                        }
+                    }
+                });
+            }
+
             #[cfg(target_os = "macos")]
             {
                 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
@@ -334,6 +365,7 @@ pub fn run() {
 
             download_manager::janitor::start_janitor_service(app.handle().clone());
             gateway::start_gateway_server(app.handle().clone());
+            let _ = tauri::async_runtime::spawn(gateway::discovery::start_mdns_broadcast());
 
             Ok(())
         })
@@ -390,6 +422,8 @@ pub fn run() {
             commands::extensions::get_extension_folder_path,
             commands::extensions::detect_installed_browsers,
             commands::extensions::launch_browser_extension_installer,
+            // Continuity & Mobile
+            commands::system::get_continuity_info,
             // App updates
             commands::system::check_app_update,
             commands::system::install_app_update,

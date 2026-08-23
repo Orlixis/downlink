@@ -6,3 +6,5 @@ export { UpdatesTab } from "./UpdatesTab";
 export { NetworkTab } from "./NetworkTab";
 export { TranscriptionTab } from "./TranscriptionTab";
 export { BrowserTab } from "./BrowserTab";
+export { ContinuityTab } from "./ContinuityTab";
+
