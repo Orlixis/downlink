@@ -32,6 +32,16 @@ fn is_throttle_error(stderr: &str) -> bool {
         || lower.contains("throttl")
 }
 
+/// Returns `true` if the stderr output indicates the requested format/quality
+/// is not available for this particular video.
+fn is_format_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("requested format")
+        || lower.contains("format not available")
+        || lower.contains("no video formats found")
+        || lower.contains("requested format is not available")
+}
+
 pub async fn execute_download(
     id: Uuid,
     url: &str,
@@ -46,7 +56,7 @@ pub async fn execute_download(
 ) -> std::result::Result<Option<String>, DownloadError> {
     execute_download_inner(
         id, url, referer, custom_title, preset_id, output_dir,
-        config, &mut cancel_rx, event_tx, resumable, false,
+        config, &mut cancel_rx, event_tx, resumable, false, false,
     ).await
 }
 
@@ -62,6 +72,7 @@ async fn execute_download_inner(
     event_tx: mpsc::Sender<DownlinkEvent>,
     resumable: bool,
     throttled: bool,
+    format_fallback: bool,
 ) -> std::result::Result<Option<String>, DownloadError> {
     let wants_subtitles = preset_id.contains("+subs");
     let sb_settings = config.read().await.sponsorblock.clone();
@@ -181,8 +192,6 @@ async fn execute_download_inner(
         args.extend([
             "--concurrent-fragments".to_string(),
             "1".to_string(),
-            "--extractor-args".to_string(),
-            "youtube:player_client=web,mweb".to_string(),
             "--retry-sleep".to_string(),
             "fragment:exp=1:10".to_string(),
             "--retry-sleep".to_string(),
@@ -192,7 +201,15 @@ async fn execute_download_inner(
             "--fragment-retries".to_string(),
             "20".to_string(),
         ]);
-        log::info!("Download {} — YouTube mode: 1 fragment (anti-throttle), web/mweb player client", id);
+        // Skip player_client restriction on format fallback retry — some YouTube
+        // content (Mixes, Radio playlists) doesn't serve all formats via web/mweb.
+        if !format_fallback {
+            args.extend([
+                "--extractor-args".to_string(),
+                "youtube:player_client=web,mweb".to_string(),
+            ]);
+        }
+        log::info!("Download {} — YouTube mode: 1 fragment, player_client={}", id, if format_fallback { "default" } else { "web,mweb" });
     } else {
         let frag_count = if throttled { "4" } else { "16" };
         args.extend([
@@ -209,7 +226,21 @@ async fn execute_download_inner(
         log::info!("Download {} — throttled mode: exponential backoff", id);
     }
 
-    args.extend(preset.yt_dlp_args.clone());
+    // On format fallback, override the preset's format selector with permissive `b/best`
+    if format_fallback {
+        // Strip any existing -f / --merge-output-format from preset args
+        let mut skip_next = false;
+        let filtered: Vec<String> = preset.yt_dlp_args.iter().filter(|a| {
+            if skip_next { skip_next = false; return false; }
+            if *a == "-f" || *a == "--merge-output-format" { skip_next = true; return false; }
+            true
+        }).cloned().collect();
+        args.extend(filtered);
+        args.extend(["-f".to_string(), "b/best".to_string()]);
+        log::info!("Download {} — format fallback: using b/best", id);
+    } else {
+        args.extend(preset.yt_dlp_args.clone());
+    }
 
     if wants_subtitles {
         args.extend([
@@ -625,7 +656,35 @@ async fn execute_download_inner(
 
             return Box::pin(execute_download_inner(
                 id, url, referer, custom_title, preset_id, output_dir,
-                config, cancel_rx, event_tx, resumable, true,
+                config, cancel_rx, event_tx, resumable, true, format_fallback,
+            )).await;
+        }
+
+        // Auto-retry with permissive format when the requested format isn't available
+        if !format_fallback && is_format_error(&stderr_text) {
+            log::warn!("Download {} — format unavailable, retrying with permissive fallback", id);
+            let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+            let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+            let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                id,
+                status: DownloadStatus::Downloading,
+                progress: Progress {
+                    percent: Some(0.0),
+                    bytes_downloaded: None,
+                    bytes_total: None,
+                    speed_bps: None,
+                    eta_seconds: None,
+                    phase: Some(Phase {
+                        name: "Retrying (format fallback)...".to_string(),
+                        detail: None,
+                    }),
+                },
+            }).await;
+
+            return Box::pin(execute_download_inner(
+                id, url, referer, custom_title, preset_id, output_dir,
+                config, cancel_rx, event_tx, resumable, throttled, true,
             )).await;
         }
 

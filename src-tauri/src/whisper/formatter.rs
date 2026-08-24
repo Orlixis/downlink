@@ -296,7 +296,7 @@ fn chunk_segment_proportionally(start: f64, end: f64, text: &str) -> Vec<Subtitl
         let chunk_len = chunk_text.len() + 1;
         let mut sub_start = start + (accumulated_chars as f64 / total_chars as f64) * duration;
         accumulated_chars += chunk_len;
-        let mut sub_end = start + (accumulated_chars as f64 / total_chars as f64) * duration;
+        let sub_end = start + (accumulated_chars as f64 / total_chars as f64) * duration;
 
         // Cap absurdly long cue durations that occur when proportional chunking
         // spreads short text over a massive silence block. Anchor to the end.
