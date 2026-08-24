@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.67](https://github.com/Orlixis/downlink/compare/v0.1.66...v0.1.67) (2026-08-24)
+
+
+### Features
+
+* bump version to 0.1.65, improve subtitle timing logic, and refine error message formatting ([6dc4d38](https://github.com/Orlixis/downlink/commit/6dc4d3862cba0aeb56b44dc395e67405f6835792))
+
+
+### Bug Fixes
+
+* **downloads:** auto-retry with permissive format when YouTube web/mweb client lacks requested format ([9c97968](https://github.com/Orlixis/downlink/commit/9c979684f9b0699d6788ea6d70c6c2b22f194b0a))
+
 ### [0.1.66](https://github.com/Orlixis/downlink/compare/v0.1.65...v0.1.66) (2026-08-23)
 
 
