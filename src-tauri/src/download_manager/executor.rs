@@ -201,15 +201,11 @@ async fn execute_download_inner(
             "--fragment-retries".to_string(),
             "20".to_string(),
         ]);
-        // Skip player_client restriction on format fallback retry — some YouTube
-        // content (Mixes, Radio playlists) doesn't serve all formats via web/mweb.
-        if !format_fallback {
-            args.extend([
-                "--extractor-args".to_string(),
-                "youtube:player_client=web,mweb".to_string(),
-            ]);
-        }
-        log::info!("Download {} — YouTube mode: 1 fragment, player_client={}", id, if format_fallback { "default" } else { "web,mweb" });
+        // Let yt-dlp use its default client negotiation (android_vr + JS
+        // challenge solver). The old player_client=web,mweb restriction
+        // caused web/mweb clients to return only pre-muxed 360p streams,
+        // breaking format selection and video+audio merging.
+        log::info!("Download {} — YouTube mode: 1 fragment, default player client", id);
     } else {
         let frag_count = if throttled { "4" } else { "16" };
         args.extend([
