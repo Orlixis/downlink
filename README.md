@@ -2,7 +2,7 @@
 
 A lightweight, cross-platform desktop application for downloading online media using [yt-dlp](https://github.com/yt-dlp/yt-dlp) as the extraction/downloading engine.
 
-[![Download Downlink](https://img.shields.io/badge/Download-Downlink-blue?style=for-the-badge)](https://provleon.github.io/downlink/)
+[![Download Downlink](https://img.shields.io/badge/Download-Downlink-blue?style=for-the-badge)](https://downlink-web.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 **[📥 Download Downlink](https://downlink-web.vercel.app)** — Get the latest release for macOS, Windows, and Linux.

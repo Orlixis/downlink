@@ -5,9 +5,9 @@
   "scripts": {
     "predev": "node scripts/sync-extension-versions.js",
     "prebuild": "node scripts/sync-extension-versions.js",
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node api.js && next dev",
+    "build": "node api.js && next build",
+    "start": "node api.js && next start",
     "lint": "eslint",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
