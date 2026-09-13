@@ -325,7 +325,7 @@ async fn execute_download_inner(
         log::info!("Pre-execution sniffer resolved {} -> {}", cleaned_url, sniffed);
         sniffed
     } else {
-        cleaned_url
+        cleaned_url.clone()
     };
 
     if target_exec_url.contains("dailymotion.com") {
@@ -340,7 +340,7 @@ async fn execute_download_inner(
     let yt_dlp_bin = config_guard.yt_dlp_path.clone();
     drop(config_guard); // Release read lock so `config` can be moved on retry
 
-    args.push(target_exec_url);
+    args.push(target_exec_url.clone());
     log::info!("Starting download {} with args: {:?}", id, args);
 
     let mut cmd = Command::new(&yt_dlp_bin);
@@ -722,6 +722,109 @@ async fn execute_download_inner(
                             if meta.len() > 0 {
                                 log::info!("TikTok fallback download successful! Saved to {}", final_fallback_path);
                                 return Ok(Some(final_fallback_path));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // OK.ru Engine Fallback Bypass (when yt-dlp is broken on OK.ru or embed page)
+        if url.contains("ok.ru") || url.contains("odnoklassniki.ru") || target_exec_url.contains("ok.ru") || target_exec_url.contains("odnoklassniki.ru") {
+            log::warn!("OK.ru Engine Bypass: yt-dlp failed, querying fallback stream resolver for {}", url);
+            let ok_target = if target_exec_url.contains("ok.ru") || target_exec_url.contains("odnoklassniki.ru") {
+                &target_exec_url
+            } else {
+                url
+            };
+            if let Some(ok_meta) = crate::ytdlp::sniffer::resolve_okru_fallback(ok_target).await {
+                if let Some(direct_mp4) = ok_meta.stream_url {
+                    let title = custom_title.or(ok_meta.title.as_deref()).unwrap_or("OK_Video");
+                    let safe_title = sanitize_filename::sanitize(title);
+                    let file_name = if safe_title.is_empty() { format!("OK_{}", id) } else { safe_title };
+                    let final_fallback_path = format!("{}/{}.mp4", output_dir, file_name);
+
+                    let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+                    if let Some(ffmpeg_bin) = ffmpeg_path {
+                        let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                        ffmpeg_cmd.args(["-i", &direct_mp4, "-c", "copy", "-y", &final_fallback_path]);
+
+                        #[cfg(windows)]
+                        ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                        let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                            id,
+                            status: DownloadStatus::Downloading,
+                            progress: Progress {
+                                percent: Some(50.0),
+                                bytes_downloaded: None,
+                                bytes_total: None,
+                                speed_bps: None,
+                                eta_seconds: None,
+                                phase: Some(Phase {
+                                    name: "Downloading via OK.ru Bypass...".to_string(),
+                                    detail: None,
+                                }),
+                            },
+                        }).await;
+
+                        if let Ok(mut child) = ffmpeg_cmd.spawn() {
+                            let _ = child.wait().await;
+                            if let Ok(meta) = std::fs::metadata(&final_fallback_path) {
+                                if meta.len() > 0 {
+                                    log::info!("OK.ru fallback download successful! Saved to {}", final_fallback_path);
+                                    return Ok(Some(final_fallback_path));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generic Iframe Fallback Bypass (if yt-dlp failed on an embed host)
+        if let Some(iframe_url) = crate::ytdlp::fallback_iframe_sniffer(&cleaned_url).await {
+            if iframe_url.contains("ok.ru") || iframe_url.contains("odnoklassniki.ru") {
+                log::warn!("Iframe Sniffer OK.ru Bypass for {}", iframe_url);
+                if let Some(ok_meta) = crate::ytdlp::sniffer::resolve_okru_fallback(&iframe_url).await {
+                    if let Some(direct_mp4) = ok_meta.stream_url {
+                        let title = custom_title.or(ok_meta.title.as_deref()).unwrap_or("Video");
+                        let safe_title = sanitize_filename::sanitize(title);
+                        let file_name = if safe_title.is_empty() { format!("Video_{}", id) } else { safe_title };
+                        let final_fallback_path = format!("{}/{}.mp4", output_dir, file_name);
+
+                        let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+                        if let Some(ffmpeg_bin) = ffmpeg_path {
+                            let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                            ffmpeg_cmd.args(["-i", &direct_mp4, "-c", "copy", "-y", &final_fallback_path]);
+
+                            #[cfg(windows)]
+                            ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                            let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                                id,
+                                status: DownloadStatus::Downloading,
+                                progress: Progress {
+                                    percent: Some(50.0),
+                                    bytes_downloaded: None,
+                                    bytes_total: None,
+                                    speed_bps: None,
+                                    eta_seconds: None,
+                                    phase: Some(Phase {
+                                        name: "Downloading via Sniffed Stream Bypass...".to_string(),
+                                        detail: None,
+                                    }),
+                                },
+                            }).await;
+
+                            if let Ok(mut child) = ffmpeg_cmd.spawn() {
+                                let _ = child.wait().await;
+                                if let Ok(meta) = std::fs::metadata(&final_fallback_path) {
+                                    if meta.len() > 0 {
+                                        log::info!("Sniffed iframe fallback download successful! Saved to {}", final_fallback_path);
+                                        return Ok(Some(final_fallback_path));
+                                    }
+                                }
                             }
                         }
                     }

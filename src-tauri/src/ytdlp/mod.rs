@@ -23,7 +23,8 @@ pub use self::metadata::{
 };
 pub use self::sniffer::{
     advanced_webview_sniffer, clean_media_url, extract_dailymotion_canonical_url,
-    fallback_iframe_sniffer, is_native_platform_url,
+    fallback_iframe_sniffer, is_native_platform_url, resolve_okru_fallback,
+    resolve_tiktok_fallback,
 };
 pub use self::types::{
     PlaylistEntry, PreviewMetadata, VideoQualityOption, YtDlpConfig, YtDlpError, YtDlpErrorKind,
@@ -164,8 +165,24 @@ impl YtDlpRunner {
                     e
                 );
 
+                if url.contains("ok.ru/") || url.contains("odnoklassniki.ru/") {
+                    if let Some(ok_meta) = resolve_okru_fallback(url).await {
+                        log::info!("Tier 1.5: Resolved OK.ru direct fallback metadata for {}", url);
+                        return Ok(ok_meta);
+                    }
+                }
+
                 if let Some(iframe_url) = fallback_iframe_sniffer(url).await {
                     log::info!("Tier 2: Found iframe URL: {}. Retrying yt-dlp...", iframe_url);
+
+                    if iframe_url.contains("ok.ru/") || iframe_url.contains("odnoklassniki.ru/") {
+                        if let Some(mut ok_meta) = resolve_okru_fallback(&iframe_url).await {
+                            log::info!("Tier 2: Resolved OK.ru direct metadata for iframe: {}", iframe_url);
+                            ok_meta.url = url.to_string();
+                            return Ok(ok_meta);
+                        }
+                    }
+
                     let fallback_args = vec![
                         "--dump-single-json".to_string(),
                         "--no-warnings".to_string(),
@@ -218,9 +235,18 @@ impl YtDlpRunner {
                             sniffed_url = canonical;
                         }
 
+                        if sniffed_url.contains("ok.ru/") || sniffed_url.contains("odnoklassniki.ru/") {
+                            if let Some(mut ok_meta) = resolve_okru_fallback(&sniffed_url).await {
+                                log::info!("Tier 3: Resolved OK.ru direct metadata for sniffed URL: {}", sniffed_url);
+                                ok_meta.url = url.to_string();
+                                return Ok(ok_meta);
+                            }
+                        }
+
                         let is_direct_media = (sniffed_url.contains(".m3u8")
                             || sniffed_url.contains(".mp4")
-                            || sniffed_url.contains(".ts"))
+                            || sniffed_url.contains(".ts")
+                            || sniffed_url.contains("okcdn.ru"))
                             && !sniffed_url.contains("dailymotion.com");
 
                         if is_direct_media {
@@ -260,6 +286,12 @@ impl YtDlpRunner {
                                     return Ok(meta);
                                 }
                             }
+                        }
+
+                        if let Some(mut ok_meta) = resolve_okru_fallback(&sniffed_url).await {
+                            log::info!("Tier 3: Fallback resolved OK.ru direct metadata after exec_json error: {}", sniffed_url);
+                            ok_meta.url = url.to_string();
+                            return Ok(ok_meta);
                         }
                     }
                 }
