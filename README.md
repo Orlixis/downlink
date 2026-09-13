@@ -5,7 +5,7 @@ A lightweight, cross-platform desktop application for downloading online media u
 [![Download Downlink](https://img.shields.io/badge/Download-Downlink-blue?style=for-the-badge)](https://provleon.github.io/downlink/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-**[📥 Download Downlink](https://provleon.github.io/downlink/)** — Get the latest release for macOS, Windows, and Linux.
+**[📥 Download Downlink](https://downlink-web.vercel.app)** — Get the latest release for macOS, Windows, and Linux.
 
 ![Downlink Screenshot](./docs/screenshot1.png)
 
