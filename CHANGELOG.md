@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.68](https://github.com/Orlixis/downlink/compare/v0.1.67...v0.1.68) (2026-09-13)
+
 ### [0.1.67](https://github.com/Orlixis/downlink/compare/v0.1.66...v0.1.67) (2026-08-24)
 
 
