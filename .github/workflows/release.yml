@@ -167,34 +167,46 @@ jobs:
       - name: Download ffmpeg (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) MACOS_ARCH="arm64"; RELEASE_ARCH="arm64" ;;
+            x86_64-apple-darwin) MACOS_ARCH="x64"; RELEASE_ARCH="amd64" ;;
+            *) echo "Unsupported macOS target: ${{ matrix.target }}"; exit 1 ;;
+          esac
           URLS=(
-            "https://evermeet.cx/ffmpeg/getrelease/zip"
-            "https://github.com/eugeneware/ffmpeg-static/releases/download/b7.1/darwin-x64"
+            "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-${MACOS_ARCH}"
+            "https://github.com/binmgr/ffmpeg/releases/latest/download/ffmpeg-darwin-${RELEASE_ARCH}"
+            "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-${MACOS_ARCH}.tar.gz"
           )
+          OUTPUT="src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+          TEMP_DIR=$(mktemp -d)
+          trap 'rm -rf "$TEMP_DIR"' EXIT
           DOWNLOADED=0
-          for url in "${URLS[@]}"; do
-            echo "Attempting macOS ffmpeg download from $url..."
-            if [[ "$url" == *".zip" ]]; then
-              if curl -fL --retry 3 --connect-timeout 20 -o ffmpeg.zip "$url"; then
-                if unzip -o ffmpeg.zip && chmod +x ffmpeg; then
-                  mv ffmpeg "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
-                  rm -f ffmpeg.zip
+          ATTEMPT=0
+          for URL in "${URLS[@]}"; do
+            echo "Attempting macOS ${MACOS_ARCH} ffmpeg download from ${URL}..."
+            ATTEMPT_DIR="$TEMP_DIR/attempt-${ATTEMPT}"
+            mkdir -p "$ATTEMPT_DIR"
+            ATTEMPT=$((ATTEMPT + 1))
+            if [[ "$URL" == *.tar.gz ]]; then
+              if curl -fL --retry 3 --connect-timeout 20 -o "$ATTEMPT_DIR/ffmpeg.tar.gz" "$URL" && tar -xzf "$ATTEMPT_DIR/ffmpeg.tar.gz" -C "$ATTEMPT_DIR"; then
+                FFMPEG_BIN=$(find "$ATTEMPT_DIR" -type f -name ffmpeg -perm -u+x | head -1)
+                if [[ -n "$FFMPEG_BIN" ]]; then
+                  cp "$FFMPEG_BIN" "$OUTPUT"
                   DOWNLOADED=1
                   break
                 fi
               fi
-            else
-              if curl -fL --retry 3 --connect-timeout 20 -o "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}" "$url"; then
-                chmod +x "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
-                DOWNLOADED=1
-                break
-              fi
+            elif curl -fL --retry 3 --connect-timeout 20 -o "$ATTEMPT_DIR/ffmpeg" "$URL" && [[ -s "$ATTEMPT_DIR/ffmpeg" ]]; then
+              cp "$ATTEMPT_DIR/ffmpeg" "$OUTPUT"
+              DOWNLOADED=1
+              break
             fi
           done
           if [[ $DOWNLOADED -ne 1 ]]; then
-            echo "Error: Failed to download ffmpeg from all mirrors"
+            echo "Error: Failed to download macOS ffmpeg from all mirrors"
             exit 1
           fi
+          chmod +x "$OUTPUT"
 
       - name: Download ffmpeg (Windows)
         if: matrix.platform == 'windows-latest'

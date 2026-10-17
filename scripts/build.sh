@@ -153,35 +153,46 @@ download_ffmpeg() {
 
     case "$platform" in
         macos-arm64|macos-x64)
+            local macos_arch="x64"
+            local release_arch="amd64"
+            [[ "$platform" == "macos-arm64" ]] && macos_arch="arm64"
+            [[ "$platform" == "macos-arm64" ]] && release_arch="arm64"
             local urls=(
-                "https://evermeet.cx/ffmpeg/getrelease/zip"
-                "https://github.com/eugeneware/ffmpeg-static/releases/download/b7.1/darwin-x64"
+                "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-${macos_arch}"
+                "https://github.com/binmgr/ffmpeg/releases/latest/download/ffmpeg-darwin-${release_arch}"
+                "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-${macos_arch}.tar.gz"
             )
             local downloaded=0
+            local attempt=0
+            local attempt_dir
             for url in "${urls[@]}"; do
                 log_info "Trying macOS ffmpeg mirror: $url"
-                if [[ "$url" == *".zip" ]]; then
-                    if curl -fL --retry 3 --connect-timeout 20 -o "$temp_dir/ffmpeg.zip" "$url"; then
-                        if unzip -o "$temp_dir/ffmpeg.zip" -d "$temp_dir"; then
-                            mv "$temp_dir/ffmpeg" "$output_file"
-                            chmod +x "$output_file"
+                attempt_dir="$temp_dir/attempt-${attempt}"
+                attempt=$((attempt + 1))
+                mkdir -p "$attempt_dir"
+                if [[ "$url" == *.tar.gz ]]; then
+                    if curl -fL --retry 3 --connect-timeout 20 -o "$attempt_dir/ffmpeg.tar.gz" "$url" && tar -xzf "$attempt_dir/ffmpeg.tar.gz" -C "$attempt_dir"; then
+                        local ffmpeg_bin=$(find "$attempt_dir" -type f -name ffmpeg -perm -u+x | head -1)
+                        if [[ -n "$ffmpeg_bin" ]]; then
+                            cp "$ffmpeg_bin" "$output_file"
                             downloaded=1
                             break
                         fi
                     fi
                 else
-                    if curl -fL --retry 3 --connect-timeout 20 -o "$output_file" "$url"; then
-                        chmod +x "$output_file"
+                    if curl -fL --retry 3 --connect-timeout 20 -o "$attempt_dir/ffmpeg" "$url" && [[ -s "$attempt_dir/ffmpeg" ]]; then
+                        cp "$attempt_dir/ffmpeg" "$output_file"
                         downloaded=1
                         break
                     fi
                 fi
             done
             if [[ $downloaded -ne 1 ]]; then
-                log_error "Failed to download macOS ffmpeg from all mirrors"
+                log_error "Failed to download macOS ffmpeg for ${macos_arch}"
                 rm -rf "$temp_dir"
                 return 1
             fi
+            chmod +x "$output_file"
             ;;
         windows-x64)
             local urls=(
