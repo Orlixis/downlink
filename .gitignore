@@ -67,3 +67,4 @@ src-tauri/Cargo.lock
 latest.json
 web/.next
 branch_structure.json
+test_stdout.mp4

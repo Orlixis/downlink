@@ -393,15 +393,21 @@ async fn execute_download_inner(
     let mut total_streams = 1;
     let mut current_stream = 0;
     let mut is_merging = false;
+    let mut stdout_done = false;
+    let mut stderr_done = false;
 
     loop {
+        if stdout_done && stderr_done {
+            break;
+        }
+
         tokio::select! {
             Ok(()) = cancel_rx.recv() => {
                 log::info!("Download {} received cancel signal", id);
                 let _ = child.kill().await;
                 return Err(DownloadError::Stopped);
             }
-            line = stdout_reader.next_line() => {
+            line = stdout_reader.next_line(), if !stdout_done => {
                 match line {
                     Ok(Some(l)) => {
                         log::info!("yt-dlp stdout: {}", l);
@@ -596,22 +602,28 @@ async fn execute_download_inner(
                             }
                         }
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        stdout_done = true;
+                        log::info!("yt-dlp stdout closed");
+                    }
                     Err(e) => {
                         log::error!("Error reading stdout: {}", e);
-                        break;
+                        stdout_done = true;
                     }
                 }
             }
-            line = stderr_reader.next_line() => {
+            line = stderr_reader.next_line(), if !stderr_done => {
                 match line {
                     Ok(Some(l)) => {
                         log::debug!("yt-dlp stderr: {}", l);
                         stderr_lines.push(l);
                     }
-                    Ok(None) => {}
+                    Ok(None) => {
+                        stderr_done = true;
+                    }
                     Err(e) => {
                         log::error!("Error reading stderr: {}", e);
+                        stderr_done = true;
                     }
                 }
             }
@@ -887,13 +899,89 @@ async fn execute_download_inner(
 
     let resolved_final_path = if let Some(p) = final_path {
         let pb = Path::new(&p);
-        if pb.is_absolute() {
-            Some(p)
+
+        // If the captured path is a fragment file (e.g. "foo.f251.webm", "foo.f395.mp4")
+        // but a merged file exists without the format-tag suffix, prefer the merged file.
+        // This handles the case where the stdout loop exits before/after [Merger] writes
+        // the final destination line and final_path still holds the last fragment path.
+        let resolved = if pb.is_absolute() { p.clone() } else {
+            Path::new(output_dir).join(pb).to_string_lossy().to_string()
+        };
+
+        let fragment_re = regex::Regex::new(r"\.f\d+\.[a-zA-Z0-9]+$").ok();
+        let is_fragment = fragment_re
+            .as_ref()
+            .map(|re| re.is_match(&resolved))
+            .unwrap_or(false);
+
+        if is_fragment {
+            // Strip ".f<id>.<ext>" suffix and look for the merged file
+            let stripped = fragment_re
+                .unwrap()
+                .replace(&resolved, "")
+                .to_string();
+
+            // Try common merge output containers in order of preference
+            let candidates = [
+                format!("{}.mp4", stripped),
+                format!("{}.mkv", stripped),
+                format!("{}.webm", stripped),
+                format!("{}.m4a", stripped),
+            ];
+            let merged = candidates.iter().find(|c| Path::new(c.as_str()).exists());
+            if let Some(m) = merged {
+                log::info!("Resolved fragment path {} -> merged file {}", resolved, m);
+                Some(m.clone())
+            } else {
+                // Merged file not found with stripped name; fall through to output_dir scan
+                log::warn!("Fragment path {} detected but no merged file found via name stripping, scanning output_dir", resolved);
+                None
+            }
         } else {
-            Some(Path::new(output_dir).join(pb).to_string_lossy().to_string())
+            Some(resolved)
         }
     } else {
-        if let Some(title) = custom_title {
+        None
+    };
+
+    // If we still don't have a valid final path (merge happened but we missed the line,
+    // or final_path was None), do a best-effort scan of output_dir for the newest
+    // mp4/mkv that isn't a fragment.
+    let resolved_final_path = if resolved_final_path.as_deref().map(|p| Path::new(p).exists()).unwrap_or(false) {
+        resolved_final_path
+    } else {
+        log::info!("final_path missing or not found on disk, scanning output_dir for merged file");
+        let mut best: Option<(std::time::SystemTime, String)> = None;
+        if let Ok(mut entries) = tokio::fs::read_dir(output_dir).await {
+            let fragment_scan_re = regex::Regex::new(r"\.f\d+\.[a-zA-Z0-9]+$").ok();
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                if !matches!(ext.as_str(), "mp4" | "mkv" | "webm" | "m4a" | "mp3" | "flac" | "opus") {
+                    continue;
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                // Skip fragment files
+                if fragment_scan_re.as_ref().map(|re| re.is_match(&name)).unwrap_or(false) {
+                    continue;
+                }
+                if let Ok(meta) = entry.metadata().await {
+                    if let Ok(modified) = meta.modified() {
+                        match &best {
+                            None => best = Some((modified, path.to_string_lossy().to_string())),
+                            Some((best_time, _)) if modified > *best_time => {
+                                best = Some((modified, path.to_string_lossy().to_string()));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((_, p)) = best {
+            log::info!("output_dir scan found candidate merged file: {}", p);
+            Some(p)
+        } else if let Some(title) = custom_title {
             let safe = sanitize_filename::sanitize(title);
             let trimmed: String = safe.chars().take(120).collect();
             let candidate_mp4 = Path::new(output_dir).join(format!("{}.mp4", trimmed));
