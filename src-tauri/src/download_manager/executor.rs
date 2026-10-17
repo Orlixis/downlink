@@ -1,0 +1,914 @@
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
+use regex::Regex;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tokio::sync::{broadcast, mpsc, RwLock};
+use uuid::Uuid;
+
+#[cfg(windows)]
+#[allow(unused_imports)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+use super::classifier::classify_error;
+use super::progress::{parse_bytes, parse_eta, parse_percent, parse_speed};
+use super::types::{DownloadConfig, DownloadError, ParsedProgress, Preset};
+use crate::events::{DownlinkEvent, DownloadStatus, ErrorCode, Phase, Progress};
+
+/// Returns `true` if the stderr output indicates a rate-limit or anti-bot
+/// throttle that can be mitigated by reducing concurrency.
+fn is_throttle_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("http error 403")
+        || lower.contains("403 forbidden")
+        || lower.contains("http error 429")
+        || lower.contains("429 too many requests")
+        || lower.contains("rate limit")
+        || lower.contains("rate-limit")
+        || lower.contains("throttl")
+}
+
+/// Returns `true` if the stderr output indicates the requested format/quality
+/// is not available for this particular video.
+fn is_format_error(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("requested format")
+        || lower.contains("format not available")
+        || lower.contains("no video formats found")
+        || lower.contains("requested format is not available")
+}
+
+pub async fn execute_download(
+    id: Uuid,
+    url: &str,
+    referer: Option<&str>,
+    custom_title: Option<&str>,
+    preset_id: &str,
+    output_dir: &str,
+    config: Arc<RwLock<DownloadConfig>>,
+    mut cancel_rx: broadcast::Receiver<()>,
+    event_tx: mpsc::Sender<DownlinkEvent>,
+    resumable: bool,
+) -> std::result::Result<Option<String>, DownloadError> {
+    execute_download_inner(
+        id, url, referer, custom_title, preset_id, output_dir,
+        config, &mut cancel_rx, event_tx, resumable, false, false,
+    ).await
+}
+
+async fn execute_download_inner(
+    id: Uuid,
+    url: &str,
+    referer: Option<&str>,
+    custom_title: Option<&str>,
+    preset_id: &str,
+    output_dir: &str,
+    config: Arc<RwLock<DownloadConfig>>,
+    cancel_rx: &mut broadcast::Receiver<()>,
+    event_tx: mpsc::Sender<DownlinkEvent>,
+    resumable: bool,
+    throttled: bool,
+    format_fallback: bool,
+) -> std::result::Result<Option<String>, DownloadError> {
+    let wants_subtitles = preset_id.contains("+subs");
+    let sb_settings = config.read().await.sponsorblock.clone();
+    let default_sb_enabled = sb_settings.as_ref().map(|s| s.enabled_by_default).unwrap_or(false);
+    let wants_sponsorblock = preset_id.contains("+sb") || default_sb_enabled;
+    let wants_meta = preset_id.contains("+meta");
+
+    let trim_section: Option<String> = {
+        if let Some(trim_idx) = preset_id.find("+trim:") {
+            let after = &preset_id[trim_idx + 6..];
+            let end = after.find('+').unwrap_or(after.len());
+            let range_str = &after[..end];
+            if let Some(dash) = range_str.find('-') {
+                let start_s = range_str[..dash].parse::<f64>().ok();
+                let end_s = range_str[dash + 1..].parse::<f64>().ok();
+                if let (Some(s), Some(e)) = (start_s, end_s) {
+                    let fmt = |secs: f64| -> String {
+                        let total = secs as u64;
+                        let h = total / 3600;
+                        let m = (total % 3600) / 60;
+                        let sec = total % 60;
+                        format!("{:02}:{:02}:{:02}", h, m, sec)
+                    };
+                    Some(format!("*{}-{}", fmt(s), fmt(e)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    let clean_preset = {
+        let mut p = preset_id.to_string();
+        p = p.replace("+subs", "");
+        p = p.replace("+sb", "");
+        p = p.replace("+meta", "");
+        while let Some(idx) = p.find("+trim:") {
+            let end = p[idx + 1..].find('+').map(|i| idx + 1 + i).unwrap_or(p.len());
+            p.drain(idx..end);
+        }
+        p
+    };
+    let preset_id = clean_preset.as_str();
+
+    let preset = if let Some(fmt) = preset_id.strip_prefix("custom:") {
+        let final_fmt = if fmt == "bestaudio" || fmt.contains('+') || fmt.contains("audio") || fmt.contains("/b") {
+            fmt.to_string()
+        } else {
+            format!("{}+ba/best", fmt)
+        };
+        Preset {
+            id: preset_id.to_string(),
+            name: "Custom Quality".to_string(),
+            yt_dlp_args: vec![
+                "-f".to_string(),
+                final_fmt,
+                "--merge-output-format".to_string(),
+                "mp4".to_string(),
+            ],
+        }
+    } else {
+        Preset::get_by_id(preset_id).unwrap_or_else(|| Preset::builtin_presets()[0].clone())
+    };
+
+    let config_guard = config.read().await;
+
+    let output_filename = if let Some(title) = custom_title {
+        let safe = sanitize_filename::sanitize(title);
+        let trimmed: String = safe.chars().take(120).collect();
+        if !trimmed.trim().is_empty() {
+            format!("{}.%(ext)s", trimmed)
+        } else {
+            config_guard.default_output_template.clone()
+        }
+    } else {
+        config_guard.default_output_template.clone()
+    };
+
+    let temp_staging_dir = crate::db::app_data_dir()
+        .map(|d| d.join("tmp").join(id.to_string()))
+        .unwrap_or_else(|_| PathBuf::from(output_dir).join(".downlink_tmp").join(id.to_string()));
+    let _ = tokio::fs::create_dir_all(&temp_staging_dir).await;
+
+    let mut args = vec![
+        "--newline".to_string(),
+        "--no-warnings".to_string(),
+        "--no-playlist".to_string(),
+        "--progress".to_string(),
+        "--progress-template".to_string(),
+        "download:[downlink] %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s %(progress._total_bytes_str)s".to_string(),
+        "--paths".to_string(),
+        format!("home:{}", output_dir),
+        "--paths".to_string(),
+        format!("temp:{}", temp_staging_dir.display()),
+        "-o".to_string(),
+        output_filename,
+        "--trim-filenames".to_string(),
+        "160".to_string(),
+        "--windows-filenames".to_string(),
+        "--retries".to_string(),
+        "10".to_string(),
+        "--fragment-retries".to_string(),
+        "10".to_string(),
+        "--user-agent".to_string(),
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36".to_string(),
+    ];
+
+    // YouTube-specific: sequential fragments + web/mweb player client + robust fragment retries
+    // to bypass YouTube's active SABR anti-bot rate-limiting and avoid HTTP 403 token revocation.
+    // Other sites get full 16-fragment multi-threaded parallelism.
+    let is_youtube = url.contains("youtube.com") || url.contains("youtu.be");
+    if is_youtube {
+        args.extend([
+            "--concurrent-fragments".to_string(),
+            "1".to_string(),
+            "--retry-sleep".to_string(),
+            "fragment:exp=1:10".to_string(),
+            "--retry-sleep".to_string(),
+            "http:exp=1:10".to_string(),
+            "--retries".to_string(),
+            "20".to_string(),
+            "--fragment-retries".to_string(),
+            "20".to_string(),
+        ]);
+        // Let yt-dlp use its default client negotiation (android_vr + JS
+        // challenge solver). The old player_client=web,mweb restriction
+        // caused web/mweb clients to return only pre-muxed 360p streams,
+        // breaking format selection and video+audio merging.
+        log::info!("Download {} — YouTube mode: 1 fragment, default player client", id);
+    } else {
+        let frag_count = if throttled { "4" } else { "16" };
+        args.extend([
+            "--concurrent-fragments".to_string(),
+            frag_count.to_string(),
+        ]);
+    }
+
+    if throttled {
+        args.extend([
+            "--sleep-requests".to_string(),
+            "0.5".to_string(),
+        ]);
+        log::info!("Download {} — throttled mode: exponential backoff", id);
+    }
+
+    // On format fallback, override the preset's format selector with permissive `b/best`
+    if format_fallback {
+        // Strip any existing -f / --merge-output-format from preset args
+        let mut skip_next = false;
+        let filtered: Vec<String> = preset.yt_dlp_args.iter().filter(|a| {
+            if skip_next { skip_next = false; return false; }
+            if *a == "-f" || *a == "--merge-output-format" { skip_next = true; return false; }
+            true
+        }).cloned().collect();
+        args.extend(filtered);
+        args.extend(["-f".to_string(), "b/best".to_string()]);
+        log::info!("Download {} — format fallback: using b/best", id);
+    } else {
+        args.extend(preset.yt_dlp_args.clone());
+    }
+
+    if wants_subtitles {
+        args.extend([
+            "--write-auto-subs".to_string(),
+            "--embed-subs".to_string(),
+            "--sub-langs".to_string(),
+            "en,en-US,en-GB".to_string(),
+            "--convert-subs".to_string(),
+            "srt".to_string(),
+        ]);
+        log::info!("Download {} — subtitles enabled", id);
+    }
+
+    if wants_sponsorblock {
+        let (mode_flag, categories_str) = if let Some(ref sb) = sb_settings {
+            let flag = if sb.mode.eq_ignore_ascii_case("mark") {
+                "--sponsorblock-mark"
+            } else {
+                "--sponsorblock-remove"
+            };
+            let cats = if sb.categories.is_empty() {
+                "sponsor,selfpromo,interaction,intro,outro".to_string()
+            } else {
+                sb.categories.join(",")
+            };
+            (flag, cats)
+        } else {
+            ("--sponsorblock-remove", "sponsor,selfpromo,interaction,intro,outro".to_string())
+        };
+
+        args.extend([
+            mode_flag.to_string(),
+            categories_str.clone(),
+        ]);
+        log::info!("Download {} — SponsorBlock ({}) enabled for categories: {}", id, mode_flag, categories_str);
+    }
+
+    if let Some(ref section) = trim_section {
+        args.push("--download-sections".to_string());
+        args.push(section.clone());
+        args.push("--force-keyframes-at-cuts".to_string());
+        log::info!("Download {} — trim sections: {}", id, section);
+    }
+
+    if wants_meta {
+        args.extend([
+            "--embed-thumbnail".to_string(),
+            "--add-metadata".to_string(),
+            "--embed-metadata".to_string(),
+            "--convert-thumbnails".to_string(),
+            "jpg".to_string(),
+        ]);
+        log::info!("Download {} — metadata embedding enabled", id);
+    }
+
+    if resumable {
+        args.push("--continue".to_string());
+        args.push("--no-part".to_string());
+        log::info!("Download {} is resumable — injecting --continue --no-part", id);
+    }
+
+    if let Some(ref ffmpeg_path) = config_guard.ffmpeg_path {
+        args.push("--ffmpeg-location".to_string());
+        args.push(ffmpeg_path.to_string_lossy().to_string());
+    }
+
+    let mut effective_url = url.to_string();
+    // Self-heal blob URLs if referer or stripped URL is available
+    if effective_url.starts_with("blob:") {
+        if let Some(ref_url) = referer {
+            if !ref_url.trim().is_empty() && !ref_url.starts_with("blob:") {
+                effective_url = ref_url.to_string();
+            } else {
+                effective_url = effective_url.trim_start_matches("blob:").to_string();
+            }
+        } else {
+            effective_url = effective_url.trim_start_matches("blob:").to_string();
+        }
+    }
+
+    let cleaned_url = crate::ytdlp::clean_media_url(&effective_url);
+
+    let target_exec_url = if let Some(canonical) = crate::ytdlp::extract_dailymotion_canonical_url(&cleaned_url) {
+        canonical
+    } else if let Some(sniffed) = crate::ytdlp::fallback_iframe_sniffer(&cleaned_url).await {
+        log::info!("Pre-execution sniffer resolved {} -> {}", cleaned_url, sniffed);
+        sniffed
+    } else {
+        cleaned_url.clone()
+    };
+
+    if target_exec_url.contains("dailymotion.com") {
+        args.push("--referer".to_string());
+        args.push("https://www.dailymotion.com/".to_string());
+    } else if let Some(ref_url) = referer {
+        if !ref_url.trim().is_empty() {
+            args.push("--referer".to_string());
+            args.push(ref_url.to_string());
+        }
+    }
+    let yt_dlp_bin = config_guard.yt_dlp_path.clone();
+    drop(config_guard); // Release read lock so `config` can be moved on retry
+
+    args.push(target_exec_url.clone());
+    log::info!("Starting download {} with args: {:?}", id, args);
+
+    let mut cmd = Command::new(&yt_dlp_bin);
+    cmd.args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd.spawn().map_err(|e| DownloadError::Failed {
+        code: ErrorCode::ToolMissing,
+        message: format!("Failed to start yt-dlp: {}", e),
+        actions: vec![],
+    })?;
+
+    let stdout = child.stdout.take().ok_or_else(|| DownloadError::Failed {
+        code: ErrorCode::Unknown,
+        message: "Failed to capture stdout".to_string(),
+        actions: vec![],
+    })?;
+
+    let stderr = child.stderr.take().ok_or_else(|| DownloadError::Failed {
+        code: ErrorCode::Unknown,
+        message: "Failed to capture stderr".to_string(),
+        actions: vec![],
+    })?;
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    let mut stderr_lines: Vec<String> = Vec::new();
+    let mut final_path: Option<String> = None;
+    let mut reported_percent: f64 = 0.0;
+
+    let progress_re = Regex::new(r"\[downlink\]\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)").ok();
+    let fallback_progress_re =
+        Regex::new(r"\[download\]\s+(\d+\.?\d*)%\s+of\s+(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)").ok();
+    let fallback_progress_re2 = Regex::new(r"\[download\]\s+(\d+\.?\d*)%").ok();
+    let merge_re = Regex::new(r"\[Merger\]|Merging formats|\[ffmpeg\]").ok();
+    let dest_re = Regex::new(r#"\[download\] Destination: (.+)"#).ok();
+    let already_re = Regex::new(r#"\[download\] (.+) has already been downloaded"#).ok();
+    let merge_dest_re = Regex::new(r#"Merging formats into "([^"]+)""#).ok();
+    let move_dest_re = Regex::new(r#"Moving file(?:.*?) to "([^"]+)""#).ok();
+    let fixup_dest_re = Regex::new(r#"Fixing MPEG-TS in MP4 container of "([^"]+)""#).ok();
+    let finished_re = Regex::new(r#"\[download\] 100%"#).ok();
+    let format_re = Regex::new(r"Downloading \d+ format\(s\):\s+(.+)").ok();
+
+    let mut total_streams = 1;
+    let mut current_stream = 0;
+    let mut is_merging = false;
+
+    loop {
+        tokio::select! {
+            Ok(()) = cancel_rx.recv() => {
+                log::info!("Download {} received cancel signal", id);
+                let _ = child.kill().await;
+                return Err(DownloadError::Stopped);
+            }
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(l)) => {
+                        log::info!("yt-dlp stdout: {}", l);
+
+                        let mut parsed: Option<ParsedProgress> = None;
+
+                        if let Some(ref re) = progress_re {
+                            if let Some(caps) = re.captures(&l) {
+                                let percent_str = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                                let speed_str = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                                let eta_str = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+                                let total_str = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+
+                                parsed = Some(ParsedProgress {
+                                    percent: parse_percent(percent_str),
+                                    speed_bps: parse_speed(speed_str),
+                                    eta_seconds: parse_eta(eta_str),
+                                    bytes_total: parse_bytes(total_str),
+                                    bytes_downloaded: None,
+                                    phase: Some("Downloading".to_string()),
+                                });
+                            }
+                        }
+
+                        if parsed.is_none() {
+                            if let Some(ref re) = fallback_progress_re {
+                                if let Some(caps) = re.captures(&l) {
+                                    let percent = caps.get(1).and_then(|m| m.as_str().parse::<f64>().ok());
+                                    let total = caps.get(2).map(|m| m.as_str().to_string());
+                                    let speed = caps.get(3).and_then(|m| parse_speed(m.as_str()));
+                                    let eta = caps.get(4).and_then(|m| parse_eta(m.as_str()));
+                                    parsed = Some(ParsedProgress {
+                                        percent,
+                                        bytes_total: total.as_deref().and_then(parse_bytes),
+                                        bytes_downloaded: None,
+                                        speed_bps: speed,
+                                        eta_seconds: eta,
+                                        phase: Some("Downloading".to_string()),
+                                    });
+                                }
+                            }
+                        }
+
+                        if parsed.is_none() {
+                            if let Some(ref re) = fallback_progress_re2 {
+                                if let Some(caps) = re.captures(&l) {
+                                    let percent = caps.get(1).and_then(|m| m.as_str().parse::<f64>().ok());
+                                    if percent.is_some() {
+                                        parsed = Some(ParsedProgress {
+                                            percent,
+                                            bytes_total: None,
+                                            bytes_downloaded: None,
+                                            speed_bps: None,
+                                            eta_seconds: None,
+                                            phase: Some("Downloading".to_string()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(ref re) = format_re {
+                            if let Some(caps) = re.captures(&l) {
+                                let formats = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                                if formats.contains('+') {
+                                    total_streams = 2;
+                                } else {
+                                    total_streams = 1;
+                                }
+                                log::info!("Detected formats: {}, total_streams = {}", formats, total_streams);
+                            }
+                        }
+
+                        if let Some(ref re) = dest_re {
+                            if re.is_match(&l) {
+                                current_stream += 1;
+                                log::info!("Detected destination, starting stream {}/{}", current_stream, total_streams);
+                            }
+                        }
+
+                        if let Some(ref re) = already_re {
+                            if re.is_match(&l) {
+                                current_stream += 1;
+                                log::info!("Detected already downloaded, bumping stream to {}/{}", current_stream, total_streams);
+                            }
+                        }
+
+                        if let Some(p) = parsed {
+                            if let Some(mut pct) = p.percent {
+                                let mut phase_name;
+                                
+                                if total_streams == 2 {
+                                    if current_stream <= 1 {
+                                        pct = pct * 0.90; 
+                                        phase_name = "Downloading video (1/2)".to_string();
+                                    } else {
+                                        pct = 90.0 + (pct * 0.08); 
+                                        phase_name = "Downloading audio (2/2)".to_string();
+                                    }
+                                } else {
+                                    pct = pct * 0.98;
+                                    phase_name = "Downloading".to_string();
+                                }
+                                
+                                if is_merging {
+                                    pct = 98.0;
+                                    phase_name = "Merging streams...".to_string();
+                                }
+
+                                if (pct - reported_percent).abs() >= 0.2 || pct >= 99.9 {
+                                    reported_percent = pct;
+                                    log::info!("Progress: {:.1}%", pct);
+                                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                                        id,
+                                        status: DownloadStatus::Downloading,
+                                        progress: Progress {
+                                            percent: Some(pct),
+                                            bytes_downloaded: p.bytes_downloaded,
+                                            bytes_total: p.bytes_total,
+                                            speed_bps: p.speed_bps,
+                                            eta_seconds: p.eta_seconds,
+                                            phase: Some(Phase {
+                                                name: phase_name,
+                                                detail: None,
+                                            }),
+                                        },
+                                    }).await;
+                                }
+                            }
+                        }
+
+                        if let Some(ref re) = merge_re {
+                            if re.is_match(&l) {
+                                is_merging = true;
+                                log::info!("Post-processing: merging streams");
+                                let _ = event_tx.send(DownlinkEvent::DownloadPostProcessing {
+                                    id,
+                                    step: "Merging streams...".to_string(),
+                                    detail: None,
+                                }).await;
+                            }
+                        }
+
+                        if let Some(ref re) = finished_re {
+                            if re.is_match(&l) {
+                                if total_streams == 2 && current_stream == 1 {
+                                    // Finished video, about to start audio. Don't send 100%.
+                                } else {
+                                    log::info!("Download complete, post-processing...");
+                                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                                        id,
+                                        status: DownloadStatus::Downloading,
+                                        progress: Progress {
+                                            percent: Some(100.0),
+                                            bytes_downloaded: None,
+                                            bytes_total: None,
+                                            speed_bps: None,
+                                            eta_seconds: None,
+                                            phase: Some(Phase {
+                                                name: "Finishing...".to_string(),
+                                                detail: None,
+                                            }),
+                                        },
+                                    }).await;
+                                }
+                            }
+                        }
+
+                        if let Some(ref re) = dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+                        if let Some(ref re) = merge_dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+                        if let Some(ref re) = move_dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+                        if let Some(ref re) = fixup_dest_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+                        if let Some(ref re) = already_re {
+                            if let Some(caps) = re.captures(&l) {
+                                final_path = caps.get(1).map(|m| m.as_str().to_string());
+                            }
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        log::error!("Error reading stdout: {}", e);
+                        break;
+                    }
+                }
+            }
+            line = stderr_reader.next_line() => {
+                match line {
+                    Ok(Some(l)) => {
+                        log::debug!("yt-dlp stderr: {}", l);
+                        stderr_lines.push(l);
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        log::error!("Error reading stderr: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    let status = child.wait().await.map_err(|e| DownloadError::Failed {
+        code: ErrorCode::Unknown,
+        message: format!("Failed to wait for yt-dlp: {}", e),
+        actions: vec![],
+    })?;
+
+    if !status.success() {
+        let stderr_text = stderr_lines.join("\n");
+        let (code, message, actions) = classify_error(&stderr_text);
+
+        // Auto-retry with throttled concurrency on rate-limit / 403 errors
+        if !throttled && is_throttle_error(&stderr_text) {
+            log::warn!("Download {} — detected rate-limit/403, retrying with throttled concurrency", id);
+            let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+            let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+            let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                id,
+                status: DownloadStatus::Downloading,
+                progress: Progress {
+                    percent: Some(0.0),
+                    bytes_downloaded: None,
+                    bytes_total: None,
+                    speed_bps: None,
+                    eta_seconds: None,
+                    phase: Some(Phase {
+                        name: "Retrying (anti-throttle)...".to_string(),
+                        detail: None,
+                    }),
+                },
+            }).await;
+
+            return Box::pin(execute_download_inner(
+                id, url, referer, custom_title, preset_id, output_dir,
+                config, cancel_rx, event_tx, resumable, true, format_fallback,
+            )).await;
+        }
+
+        // Auto-retry with permissive format when the requested format isn't available
+        if !format_fallback && is_format_error(&stderr_text) {
+            log::warn!("Download {} — format unavailable, retrying with permissive fallback", id);
+            let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+            let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+            let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                id,
+                status: DownloadStatus::Downloading,
+                progress: Progress {
+                    percent: Some(0.0),
+                    bytes_downloaded: None,
+                    bytes_total: None,
+                    speed_bps: None,
+                    eta_seconds: None,
+                    phase: Some(Phase {
+                        name: "Retrying (format fallback)...".to_string(),
+                        detail: None,
+                    }),
+                },
+            }).await;
+
+            return Box::pin(execute_download_inner(
+                id, url, referer, custom_title, preset_id, output_dir,
+                config, cancel_rx, event_tx, resumable, throttled, true,
+            )).await;
+        }
+
+        // TikTok Engine Fallback Bypass (when yt-dlp is blocked by TikTok's JS challenge)
+        if url.contains("tiktok.com") {
+            log::warn!("TikTok Engine Bypass: yt-dlp failed, querying fallback stream resolver for {}", url);
+            if let Some((direct_mp4, title, _)) = crate::ytdlp::sniffer::resolve_tiktok_fallback(url).await {
+                let safe_title = sanitize_filename::sanitize(&title);
+                let file_name = if safe_title.is_empty() { format!("TikTok_{}", id) } else { safe_title };
+                let final_fallback_path = format!("{}/{}.mp4", output_dir, file_name);
+
+                let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+                if let Some(ffmpeg_bin) = ffmpeg_path {
+                    let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                    ffmpeg_cmd.args(["-i", &direct_mp4, "-c", "copy", "-y", &final_fallback_path]);
+
+                    #[cfg(windows)]
+                    ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                    let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                        id,
+                        status: DownloadStatus::Downloading,
+                        progress: Progress {
+                            percent: Some(50.0),
+                            bytes_downloaded: None,
+                            bytes_total: None,
+                            speed_bps: None,
+                            eta_seconds: None,
+                            phase: Some(Phase {
+                                name: "Downloading via TikTok Bypass...".to_string(),
+                                detail: None,
+                            }),
+                        },
+                    }).await;
+
+                    if let Ok(mut child) = ffmpeg_cmd.spawn() {
+                        let _ = child.wait().await;
+                        if let Ok(meta) = std::fs::metadata(&final_fallback_path) {
+                            if meta.len() > 0 {
+                                log::info!("TikTok fallback download successful! Saved to {}", final_fallback_path);
+                                return Ok(Some(final_fallback_path));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // OK.ru Engine Fallback Bypass (when yt-dlp is broken on OK.ru or embed page)
+        if url.contains("ok.ru") || url.contains("odnoklassniki.ru") || target_exec_url.contains("ok.ru") || target_exec_url.contains("odnoklassniki.ru") {
+            log::warn!("OK.ru Engine Bypass: yt-dlp failed, querying fallback stream resolver for {}", url);
+            let ok_target = if target_exec_url.contains("ok.ru") || target_exec_url.contains("odnoklassniki.ru") {
+                &target_exec_url
+            } else {
+                url
+            };
+            if let Some(ok_meta) = crate::ytdlp::sniffer::resolve_okru_fallback(ok_target).await {
+                if let Some(direct_mp4) = ok_meta.stream_url {
+                    let title = custom_title.or(ok_meta.title.as_deref()).unwrap_or("OK_Video");
+                    let safe_title = sanitize_filename::sanitize(title);
+                    let file_name = if safe_title.is_empty() { format!("OK_{}", id) } else { safe_title };
+                    let final_fallback_path = format!("{}/{}.mp4", output_dir, file_name);
+
+                    let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+                    if let Some(ffmpeg_bin) = ffmpeg_path {
+                        let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                        ffmpeg_cmd.args(["-i", &direct_mp4, "-c", "copy", "-y", &final_fallback_path]);
+
+                        #[cfg(windows)]
+                        ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                        let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                            id,
+                            status: DownloadStatus::Downloading,
+                            progress: Progress {
+                                percent: Some(50.0),
+                                bytes_downloaded: None,
+                                bytes_total: None,
+                                speed_bps: None,
+                                eta_seconds: None,
+                                phase: Some(Phase {
+                                    name: "Downloading via OK.ru Bypass...".to_string(),
+                                    detail: None,
+                                }),
+                            },
+                        }).await;
+
+                        if let Ok(mut child) = ffmpeg_cmd.spawn() {
+                            let _ = child.wait().await;
+                            if let Ok(meta) = std::fs::metadata(&final_fallback_path) {
+                                if meta.len() > 0 {
+                                    log::info!("OK.ru fallback download successful! Saved to {}", final_fallback_path);
+                                    return Ok(Some(final_fallback_path));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generic Iframe Fallback Bypass (if yt-dlp failed on an embed host)
+        if let Some(iframe_url) = crate::ytdlp::fallback_iframe_sniffer(&cleaned_url).await {
+            if iframe_url.contains("ok.ru") || iframe_url.contains("odnoklassniki.ru") {
+                log::warn!("Iframe Sniffer OK.ru Bypass for {}", iframe_url);
+                if let Some(ok_meta) = crate::ytdlp::sniffer::resolve_okru_fallback(&iframe_url).await {
+                    if let Some(direct_mp4) = ok_meta.stream_url {
+                        let title = custom_title.or(ok_meta.title.as_deref()).unwrap_or("Video");
+                        let safe_title = sanitize_filename::sanitize(title);
+                        let file_name = if safe_title.is_empty() { format!("Video_{}", id) } else { safe_title };
+                        let final_fallback_path = format!("{}/{}.mp4", output_dir, file_name);
+
+                        let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+                        if let Some(ffmpeg_bin) = ffmpeg_path {
+                            let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                            ffmpeg_cmd.args(["-i", &direct_mp4, "-c", "copy", "-y", &final_fallback_path]);
+
+                            #[cfg(windows)]
+                            ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                            let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                                id,
+                                status: DownloadStatus::Downloading,
+                                progress: Progress {
+                                    percent: Some(50.0),
+                                    bytes_downloaded: None,
+                                    bytes_total: None,
+                                    speed_bps: None,
+                                    eta_seconds: None,
+                                    phase: Some(Phase {
+                                        name: "Downloading via Sniffed Stream Bypass...".to_string(),
+                                        detail: None,
+                                    }),
+                                },
+                            }).await;
+
+                            if let Ok(mut child) = ffmpeg_cmd.spawn() {
+                                let _ = child.wait().await;
+                                if let Ok(meta) = std::fs::metadata(&final_fallback_path) {
+                                    if meta.len() > 0 {
+                                        log::info!("Sniffed iframe fallback download successful! Saved to {}", final_fallback_path);
+                                        return Ok(Some(final_fallback_path));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if url.contains(".m3u8") || url.contains(".mp4") {
+            log::warn!("Tier 4 Bypass: yt-dlp failed, falling back to raw ffmpeg bypass for {}", url);
+            let final_fallback_path = format!("{}/downlink_raw_{}.mp4", output_dir, id);
+
+            let ffmpeg_path = config.read().await.ffmpeg_path.clone();
+            if let Some(ffmpeg_bin) = ffmpeg_path {
+                let mut ffmpeg_cmd = Command::new(ffmpeg_bin);
+                ffmpeg_cmd.args(["-i", url, "-c", "copy", "-y", &final_fallback_path]);
+
+                #[cfg(windows)]
+                ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                let _ = event_tx.send(DownlinkEvent::DownloadProgress {
+                    id,
+                    status: DownloadStatus::Downloading,
+                    progress: Progress {
+                        percent: None,
+                        bytes_downloaded: None,
+                        bytes_total: None,
+                        speed_bps: None,
+                        eta_seconds: None,
+                        phase: Some(Phase {
+                            name: "Fallback raw extraction...".to_string(),
+                            detail: None,
+                        }),
+                    },
+                }).await;
+
+                if let Ok(mut ffmpeg_child) = ffmpeg_cmd.spawn() {
+                    let _ = ffmpeg_child.wait().await;
+                    if let Ok(metadata) = std::fs::metadata(&final_fallback_path) {
+                        if metadata.len() > 0 {
+                            log::info!("Tier 4 Bypass successful! Saved to {}", final_fallback_path);
+                            return Ok(Some(final_fallback_path));
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+        let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+        return Err(DownloadError::Failed {
+            code,
+            message,
+            actions,
+        });
+    }
+
+    let _ = tokio::fs::remove_dir_all(&temp_staging_dir).await;
+    let _ = crate::download_manager::janitor::cleanup_directory_fragments(Path::new(output_dir)).await;
+
+    let resolved_final_path = if let Some(p) = final_path {
+        let pb = Path::new(&p);
+        if pb.is_absolute() {
+            Some(p)
+        } else {
+            Some(Path::new(output_dir).join(pb).to_string_lossy().to_string())
+        }
+    } else {
+        if let Some(title) = custom_title {
+            let safe = sanitize_filename::sanitize(title);
+            let trimmed: String = safe.chars().take(120).collect();
+            let candidate_mp4 = Path::new(output_dir).join(format!("{}.mp4", trimmed));
+            let candidate_mkv = Path::new(output_dir).join(format!("{}.mkv", trimmed));
+            if candidate_mp4.exists() {
+                Some(candidate_mp4.to_string_lossy().to_string())
+            } else if candidate_mkv.exists() {
+                Some(candidate_mkv.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    Ok(resolved_final_path)
+}

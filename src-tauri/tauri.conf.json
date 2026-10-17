@@ -1,0 +1,117 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Downlink",
+  "version": "0.1.68",
+  "identifier": "com.downlink.downlink",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Downlink",
+        "width": 900,
+        "height": 700,
+        "minWidth": 700,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "transparent": true,
+        "visible": false,
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": [
+            "mica",
+            "blur"
+          ]
+        }
+      },
+      {
+        "label": "splashscreen",
+        "url": "/splash",
+        "width": 500,
+        "height": 500,
+        "resizable": false,
+        "fullscreen": false,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "visible": true,
+        "dragDropEnabled": false,
+        "alwaysOnTop": true
+      }
+    ],
+    "macOSPrivateApi": true,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "resources": [
+      "../extensions/**/*"
+    ],
+    "externalBin": [
+      "binaries/yt-dlp",
+      "binaries/ffmpeg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "A lightweight cross-platform video downloader powered by yt-dlp",
+    "longDescription": "Downlink is a modern, user-friendly desktop application for downloading videos and audio from YouTube and hundreds of other sites. Built with yt-dlp as the engine, it provides a clean interface for managing downloads with features like quality presets, playlist support, and SponsorBlock integration.",
+    "copyright": "© 2025 Downlink",
+    "fileAssociations": [
+      {
+        "ext": [
+          "torrent"
+        ],
+        "name": "BitTorrent Document",
+        "description": "BitTorrent Seed File",
+        "mimeType": "application/x-bittorrent",
+        "role": "Viewer"
+      }
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.13"
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Orlixis/downlink/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1M0Y3MjZBRDA5ODgwNjAKUldSZ2dKalFhbkkvaGJOSERsNXFXQkQyN2Q4M0tscVlvK1lKQkFwSmxhQ1Q2dnZwSFhZZ0tNWVUK"
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "downlink",
+          "magnet"
+        ]
+      }
+    }
+  }
+}
