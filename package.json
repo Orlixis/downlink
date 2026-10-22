@@ -1,6 +1,6 @@
 {
   "name": "downlink",
-  "version": "0.1.70",
+  "version": "0.1.71",
   "private": true,
   "scripts": {
     "predev": "node scripts/sync-extension-versions.js && node scripts/ensure-binaries.js",
