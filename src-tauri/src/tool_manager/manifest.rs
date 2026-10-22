@@ -27,23 +27,29 @@ pub async fn download_file(
         .timeout(Duration::from_secs(600))
         .build()?;
 
-    let response = client.get(url).send().await?.error_for_status()?;
-    let total_size = response.content_length().unwrap_or(expected_size);
-
-    let bytes = response.bytes().await?;
+    let mut response = client.get(url).send().await?.error_for_status()?;
+    let progress_total = expected_size.max(response.content_length().unwrap_or(0));
 
     let mut file = fs::File::create(dest).await?;
-    file.write_all(&bytes).await?;
+    let mut downloaded_size = 0_u64;
+
+    while let Some(chunk) = response.chunk().await? {
+        file.write_all(&chunk).await?;
+        downloaded_size += chunk.len() as u64;
+
+        if progress_total > 0 {
+            progress_callback((downloaded_size as f64 / progress_total as f64 * 100.0).min(100.0));
+        }
+    }
     file.flush().await?;
 
     progress_callback(100.0);
 
-    let actual_size = bytes.len() as u64;
-    if actual_size != total_size && total_size > 0 {
+    if expected_size > 0 && downloaded_size != expected_size {
         log::warn!(
             "Downloaded size {} differs from expected {}",
-            actual_size,
-            total_size
+            downloaded_size,
+            expected_size
         );
     }
 

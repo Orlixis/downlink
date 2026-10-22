@@ -15,7 +15,7 @@ impl YtDlpConfig {
         Self {
             yt_dlp_path,
             global_args: vec![],
-            metadata_timeout: Duration::from_secs(25),
+            metadata_timeout: Duration::from_secs(45),
         }
     }
 }

@@ -32,7 +32,7 @@ pub async fn save_settings(
 
     let dm = state.download_manager.read().await;
     if let Some(ref manager) = *dm {
-        let (yt_dlp_path, ffmpeg_path) = {
+        let (yt_dlp_path, ffmpeg_path, ffprobe_path) = {
             let tm = state.tool_manager.read().await;
             let yt_dlp_path = if let Some(ref manager) = *tm {
                 manager.yt_dlp_path().await
@@ -48,7 +48,13 @@ pub async fn save_settings(
             }
             .or_else(download_manager::find_ffmpeg_binary);
 
-            (yt_dlp_path, ffmpeg_path)
+            let ffprobe_path = if let Some(ref manager) = *tm {
+                manager.ffprobe_path().await
+            } else {
+                None
+            };
+
+            (yt_dlp_path, ffmpeg_path, ffprobe_path)
         };
 
         let new_config = DownloadConfig {
@@ -56,6 +62,7 @@ pub async fn save_settings(
             default_output_template: settings.formats.filename_template,
             yt_dlp_path,
             ffmpeg_path,
+            ffprobe_path,
             sponsorblock: Some(settings.sponsorblock),
         };
         manager.update_config(new_config).await;

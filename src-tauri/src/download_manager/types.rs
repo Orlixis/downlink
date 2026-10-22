@@ -8,6 +8,7 @@ use crate::events::{Action, ErrorCode};
 pub struct DownloadConfig {
     pub yt_dlp_path: PathBuf,
     pub ffmpeg_path: Option<PathBuf>,
+    pub ffprobe_path: Option<PathBuf>,
     pub max_concurrent: usize,
     pub default_output_template: String,
     pub sponsorblock: Option<crate::settings::SponsorBlockSettings>,

@@ -79,6 +79,8 @@ pub struct ToolchainStatus {
 pub struct ToolManifestEntry {
     pub tool: String,
     pub version: String,
+    /// Rust target triple the downloaded binary was built for.
+    pub target: String,
     pub download_url: String,
     pub sha256: String,
     pub size_bytes: u64,

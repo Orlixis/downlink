@@ -22,7 +22,7 @@ use commands::FetchMetadataResult;
 use download_manager::{DownloadConfig, DownloadManager};
 use events::DownlinkEvent;
 use settings::SettingsManager;
-use tool_manager::{ToolManager, ToolManagerConfig};
+use tool_manager::ToolManager;
 
 pub struct CachedMeta {
     pub result: FetchMetadataResult,
@@ -36,6 +36,9 @@ pub struct AppState {
     pub event_tx: Arc<Mutex<Option<mpsc::Sender<DownlinkEvent>>>>,
     pub metadata_cache: Mutex<HashMap<String, CachedMeta>>,
 }
+
+const TOOL_MANIFEST_URL: &str =
+    "https://github.com/Orlixis/downlink/releases/latest/download/tools-manifest.json";
 
 pub async fn get_or_init_download_manager(
     state: &State<'_, AppState>,
@@ -110,7 +113,7 @@ pub async fn get_or_init_download_manager(
         manager.get_user_settings().unwrap_or_default()
     };
 
-    let (yt_dlp_path, ffmpeg_path) = {
+    let (yt_dlp_path, ffmpeg_path, ffprobe_path) = {
         let tm = state.tool_manager.read().await;
         let yt_dlp_path = if let Some(ref manager) = *tm {
             manager.yt_dlp_path().await
@@ -122,12 +125,18 @@ pub async fn get_or_init_download_manager(
         } else {
             None
         };
-        (yt_dlp_path, ffmpeg_path)
+        let ffprobe_path = if let Some(ref manager) = *tm {
+            manager.ffprobe_path().await
+        } else {
+            None
+        };
+        (yt_dlp_path, ffmpeg_path, ffprobe_path)
     };
 
     let config = DownloadConfig {
         yt_dlp_path: yt_dlp_path.unwrap_or_else(download_manager::find_ytdlp_binary),
         ffmpeg_path: ffmpeg_path.or_else(download_manager::find_ffmpeg_binary),
+        ffprobe_path,
         max_concurrent: settings.general.concurrency as usize,
         default_output_template: settings.formats.filename_template,
         sponsorblock: Some(settings.sponsorblock),
@@ -393,10 +402,13 @@ pub fn run() {
                 log::info!("Setting bundled_dir to: {:?}", dir);
                 tool_manager::ToolManagerConfigBuilder::new()
                     .bundled_dir(dir)
+                    .manifest_url(TOOL_MANIFEST_URL.to_string())
                     .build()
             } else {
                 log::warn!("Could not determine executable directory, using default config");
-                ToolManagerConfig::default()
+                tool_manager::ToolManagerConfigBuilder::new()
+                    .manifest_url(TOOL_MANIFEST_URL.to_string())
+                    .build()
             };
             let tool_manager = ToolManager::new(tool_config).ok().map(Arc::new);
 

@@ -29,6 +29,10 @@ fn load_env_var(key: &str) -> String {
 fn main() {
     tauri_build::build();
 
+    let target = std::env::var("TARGET").expect("Cargo must provide the compilation target");
+    println!("cargo:rustc-env=TAURI_ENV_TARGET_TRIPLE={target}");
+    println!("cargo:rerun-if-env-changed=TARGET");
+
     // Embed the bundled Groq API key at compile time from env or root .env file.
     let key = load_env_var("DOWNLINK_GROQ_KEY");
     println!("cargo:rustc-env=DOWNLINK_GROQ_KEY={key}");

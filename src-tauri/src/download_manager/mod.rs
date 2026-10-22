@@ -21,7 +21,7 @@ pub use self::classifier::classify_error;
 pub use self::executor::execute_download;
 pub use self::fixup::{
     extract_video_thumbnail_base64, fetch_metadata_for_url, find_ffmpeg_binary, find_ytdlp_binary,
-    fixup_disguised_hls_stream,
+    fixup_disguised_hls_stream, has_video_and_audio_streams,
 };
 pub use self::progress::{
     classify_error_message, parse_bytes, parse_eta, parse_percent, parse_speed,

@@ -189,7 +189,13 @@ impl ToolManager {
         let manifest = manifest::fetch_manifest(manifest_url).await?;
         let mut updates = Vec::new();
 
+        let current_target = option_env!("TAURI_ENV_TARGET_TRIPLE")
+            .unwrap_or(std::env::consts::ARCH);
+
         for entry in manifest.tools {
+            if entry.target != current_target {
+                continue;
+            }
             let tool = match entry.tool.as_str() {
                 "yt-dlp" => Tool::YtDlp,
                 "ffmpeg" => Tool::Ffmpeg,
@@ -250,12 +256,21 @@ impl ToolManager {
             ));
         }
 
-        if final_path.exists() {
-            let backup_path = final_path.with_extension("bak");
-            let _ = fs::rename(&final_path, &backup_path).await;
+        let backup_path = final_path.with_extension("bak");
+        let has_existing_tool = final_path.exists();
+        if has_existing_tool {
+            if backup_path.exists() {
+                fs::remove_file(&backup_path).await?;
+            }
+            fs::rename(&final_path, &backup_path).await?;
         }
 
-        fs::rename(&temp_path, &final_path).await?;
+        if let Err(error) = fs::rename(&temp_path, &final_path).await {
+            if has_existing_tool {
+                let _ = fs::rename(&backup_path, &final_path).await;
+            }
+            return Err(error.into());
+        }
 
         #[cfg(unix)]
         {
@@ -265,7 +280,24 @@ impl ToolManager {
             fs::set_permissions(&final_path, perms).await?;
         }
 
-        self.check_health(&final_path, tool).await?;
+        if let Err(error) = self.check_health(&final_path, tool).await {
+            let _ = fs::remove_file(&final_path).await;
+            if has_existing_tool {
+                if let Err(restore_error) = fs::rename(&backup_path, &final_path).await {
+                    log::error!(
+                        "Failed to restore {} after rejecting updated {}: {}",
+                        backup_path.display(),
+                        tool.as_str(),
+                        restore_error,
+                    );
+                }
+            }
+            return Err(error);
+        }
+
+        if has_existing_tool {
+            fs::remove_file(&backup_path).await?;
+        }
 
         Ok(final_path)
     }

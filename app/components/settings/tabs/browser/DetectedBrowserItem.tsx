@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Chrome, Compass, ExternalLink, Globe, Loader2, Sparkles, Star } from "lucide-react";
+import { Check, Compass, ExternalLink, Globe, Loader2, Monitor, Sparkles, Star } from "lucide-react";
 import type { DetectedBrowser } from "./types";
 
 interface DetectedBrowserItemProps {
@@ -24,7 +24,7 @@ export function DetectedBrowserItem({
       case "arc":
       case "opera":
       case "vivaldi":
-        return <Chrome className="h-4 w-4 text-sky-400" />;
+        return <Monitor className="h-4 w-4 text-sky-400" />;
       case "firefox":
         return <Globe className="h-4 w-4 text-amber-400" />;
       case "zen":

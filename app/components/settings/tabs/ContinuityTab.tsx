@@ -169,14 +169,14 @@ export function ContinuityTab() {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-zinc-200">
-                  Liquid Glass Web Companion
+                  Web Companion
                 </span>
                 <button
                   type="button"
                   onClick={handleOpenCompanionInBrowser}
                   className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-1 text-[11px] font-semibold text-cyan-400 hover:bg-blue-500/20 active:scale-95 transition-all"
                 >
-                  <span>Launch in Browser</span>
+                  <span>Launch</span>
                   <ExternalLink className="h-3 w-3" />
                 </button>
               </div>
@@ -212,7 +212,7 @@ export function ContinuityTab() {
                 ) : (
                   <>
                     <Copy className="h-3 w-3 text-zinc-400" />
-                    <span>Copy Scheme</span>
+                    <span>Copy</span>
                   </>
                 )}
               </button>

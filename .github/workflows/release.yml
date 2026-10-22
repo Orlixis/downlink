@@ -173,11 +173,10 @@ jobs:
             *) echo "Unsupported macOS target: ${{ matrix.target }}"; exit 1 ;;
           esac
           URLS=(
-            "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-${MACOS_ARCH}"
-            "https://github.com/binmgr/ffmpeg/releases/latest/download/ffmpeg-darwin-${RELEASE_ARCH}"
             "https://github.com/vanloctech/ffmpeg-macos/releases/latest/download/ffmpeg-macos-${MACOS_ARCH}.tar.gz"
           )
           OUTPUT="src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+          FFPROBE_OUTPUT="src-tauri/binaries/ffprobe-${{ matrix.binary_suffix }}"
           TEMP_DIR=$(mktemp -d)
           trap 'rm -rf "$TEMP_DIR"' EXIT
           DOWNLOADED=0
@@ -190,16 +189,14 @@ jobs:
             if [[ "$URL" == *.tar.gz ]]; then
               if curl -fL --retry 3 --connect-timeout 20 -o "$ATTEMPT_DIR/ffmpeg.tar.gz" "$URL" && tar -xzf "$ATTEMPT_DIR/ffmpeg.tar.gz" -C "$ATTEMPT_DIR"; then
                 FFMPEG_BIN=$(find "$ATTEMPT_DIR" -type f -name ffmpeg -perm -u+x | head -1)
-                if [[ -n "$FFMPEG_BIN" ]]; then
+                FFPROBE_BIN=$(find "$ATTEMPT_DIR" -type f -name ffprobe -perm -u+x | head -1)
+                if [[ -n "$FFMPEG_BIN" && -n "$FFPROBE_BIN" ]]; then
                   cp "$FFMPEG_BIN" "$OUTPUT"
+                  cp "$FFPROBE_BIN" "$FFPROBE_OUTPUT"
                   DOWNLOADED=1
                   break
                 fi
               fi
-            elif curl -fL --retry 3 --connect-timeout 20 -o "$ATTEMPT_DIR/ffmpeg" "$URL" && [[ -s "$ATTEMPT_DIR/ffmpeg" ]]; then
-              cp "$ATTEMPT_DIR/ffmpeg" "$OUTPUT"
-              DOWNLOADED=1
-              break
             fi
           done
           if [[ $DOWNLOADED -ne 1 ]]; then
@@ -207,6 +204,7 @@ jobs:
             exit 1
           fi
           chmod +x "$OUTPUT"
+          chmod +x "$FFPROBE_OUTPUT"
 
       - name: Download ffmpeg (Windows)
         if: matrix.platform == 'windows-latest'
@@ -232,8 +230,10 @@ jobs:
                   Write-Host "Download successful ($([math]::Round($FileSize / 1MB, 2)) MB). Extracting..."
                   Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
                   $FFmpegExe = Get-ChildItem -Path $TempDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
-                  if ($FFmpegExe) {
+                  $FFprobeExe = Get-ChildItem -Path $TempDir -Filter "ffprobe.exe" -Recurse | Select-Object -First 1
+                  if ($FFmpegExe -and $FFprobeExe) {
                     Copy-Item -Path $FFmpegExe.FullName -Destination "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}.exe" -Force
+                    Copy-Item -Path $FFprobeExe.FullName -Destination "src-tauri/binaries/ffprobe-${{ matrix.binary_suffix }}.exe" -Force
                     $Downloaded = $true
                     Write-Host "Successfully installed ffmpeg.exe from $Url"
                     break
@@ -266,9 +266,12 @@ jobs:
             if curl -fL --retry 3 --connect-timeout 20 -o ffmpeg.tar.xz "$url"; then
               if tar -xf ffmpeg.tar.xz; then
                 FFMPEG_BIN=$(find . -name "ffmpeg" -type f -executable | head -1)
-                if [[ -n "$FFMPEG_BIN" ]]; then
+                FFPROBE_BIN=$(find . -name "ffprobe" -type f -executable | head -1)
+                if [[ -n "$FFMPEG_BIN" && -n "$FFPROBE_BIN" ]]; then
                   mv "$FFMPEG_BIN" "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+                  mv "$FFPROBE_BIN" "src-tauri/binaries/ffprobe-${{ matrix.binary_suffix }}"
                   chmod +x "src-tauri/binaries/ffmpeg-${{ matrix.binary_suffix }}"
+                  chmod +x "src-tauri/binaries/ffprobe-${{ matrix.binary_suffix }}"
                   rm -rf ffmpeg.tar.xz ffmpeg-*
                   DOWNLOADED=1
                   break
@@ -286,6 +289,86 @@ jobs:
       - name: List binaries
         run: ls -la src-tauri/binaries/
         shell: bash
+
+      - name: Generate sidecar metadata
+        shell: bash
+        env:
+          TOOL_TARGET: ${{ matrix.target }}
+        run: |
+          python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          target = os.environ["TOOL_TARGET"]
+          binaries = Path("src-tauri/binaries")
+          suffix = ".exe" if target.endswith("windows-msvc") else ""
+          tools = {
+              "yt-dlp": ("--version",),
+              "ffmpeg": ("-version",),
+              "ffprobe": ("-version",),
+          }
+          entries = []
+
+          for tool, version_args in tools.items():
+              path = binaries / f"{tool}-{target}{suffix}"
+              if not path.is_file():
+                  raise SystemExit(f"Required sidecar is missing: {path}")
+              result = subprocess.run(
+                  [str(path), *version_args],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              first_line = result.stdout.splitlines()[0].strip()
+              version = first_line if tool == "yt-dlp" else " ".join(first_line.split()[2:3])
+              entries.append({
+                  "tool": tool,
+                  "target": target,
+                  "asset_name": path.name,
+                  "version": version,
+                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  "size_bytes": path.stat().st_size,
+              })
+
+          Path("toolchain-metadata.json").write_text(json.dumps({"tools": entries}, indent=2) + "\n")
+          print(Path("toolchain-metadata.json").read_text())
+          PY
+
+      - name: Upload sidecars to release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          RELEASE_ID=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" | jq -r '.id')
+
+          for sidecar in src-tauri/binaries/*; do
+            filename=$(basename "$sidecar")
+            existing_id=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" | \
+              jq -r --arg name "$filename" '.[] | select(.name == $name) | .id')
+            if [[ -n "$existing_id" && "$existing_id" != "null" ]]; then
+              curl -fsSL -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/assets/$existing_id"
+            fi
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$sidecar" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=$filename"
+          done
+
+      - name: Upload toolchain metadata artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Toolchain-${{ matrix.name }}
+          path: toolchain-metadata.json
+          if-no-files-found: error
 
       - name: Debug signing key
         shell: bash
@@ -519,6 +602,51 @@ jobs:
           # Pretty print and validate
           cat latest.json | jq .
 
+      - name: Generate tools-manifest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          entries = []
+          for metadata_path in sorted(Path("artifacts").glob("Toolchain-*/toolchain-metadata.json")):
+            entries.extend(json.loads(metadata_path.read_text())["tools"])
+
+          expected_targets = {
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-gnu",
+          }
+          expected_tools = {"yt-dlp", "ffmpeg", "ffprobe"}
+          actual = {(entry["target"], entry["tool"]) for entry in entries}
+          missing = [
+            f"{target}/{tool}"
+            for target in sorted(expected_targets)
+            for tool in sorted(expected_tools)
+            if (target, tool) not in actual
+          ]
+          if missing:
+            raise SystemExit("Missing sidecar metadata: " + ", ".join(missing))
+
+          for entry in entries:
+            entry["download_url"] = (
+              "https://github.com/${{ github.repository }}/releases/latest/download/"
+              + entry.pop("asset_name")
+            )
+
+          manifest = {
+            "manifest_version": 1,
+            "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "tools": sorted(entries, key=lambda entry: (entry["target"], entry["tool"])),
+          }
+          Path("tools-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+          jq . tools-manifest.json
+
       - name: Upload latest.json to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -547,3 +675,25 @@ jobs:
             "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=latest.json"
 
           echo "latest.json uploaded successfully to release assets!"
+
+      - name: Upload tools-manifest.json to release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          RELEASE_ID=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" | jq -r '.id')
+          EXISTING_ASSET_ID=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" | \
+            jq -r '.[] | select(.name == "tools-manifest.json") | .id')
+          if [[ -n "$EXISTING_ASSET_ID" && "$EXISTING_ASSET_ID" != "null" ]]; then
+            curl -fsSL -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/assets/$EXISTING_ASSET_ID"
+          fi
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @tools-manifest.json \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=tools-manifest.json"

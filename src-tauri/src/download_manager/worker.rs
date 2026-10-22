@@ -5,7 +5,9 @@ use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use uuid::Uuid;
 
 use super::executor::execute_download;
-use super::fixup::{extract_video_thumbnail_base64, fixup_disguised_hls_stream};
+use super::fixup::{
+    extract_video_thumbnail_base64, fixup_disguised_hls_stream, has_video_and_audio_streams,
+};
 use super::types::{DownloadConfig, DownloadError, DownloadItemInfo};
 use crate::db::{Db, DownloadStatus};
 use crate::events::{self, DownlinkEvent, MediaInfo};
@@ -118,9 +120,9 @@ pub async fn run_download_worker(
     let mut db_guard = db.lock().await;
     match result {
         Ok(mut final_path) => {
-            let ffmpeg_bin = {
+            let (ffmpeg_bin, ffprobe_bin) = {
                 let cfg = config.read().await;
-                cfg.ffmpeg_path.clone()
+                (cfg.ffmpeg_path.clone(), cfg.ffprobe_path.clone())
             };
 
             if let (Some(ref bin), Some(ref path_str)) = (&ffmpeg_bin, &final_path) {
@@ -129,6 +131,38 @@ pub async fn run_download_worker(
                     if let Some(fixed_path) = fixup_disguised_hls_stream(path_str, bin).await {
                         final_path = Some(fixed_path);
                     }
+                }
+            }
+
+            let is_audio_only = preset_id.starts_with("audio_")
+                || preset_id
+                    .strip_prefix("custom:")
+                    .map(|format| format == "bestaudio" || format.contains("audio"))
+                    .unwrap_or(false);
+            if !is_audio_only {
+                if let (Some(ref probe), Some(ref path_str)) = (&ffprobe_bin, &final_path) {
+                    let path = PathBuf::from(path_str);
+                    if !path.exists() || !has_video_and_audio_streams(&path, probe).await {
+                        let message = format!(
+                            "The completed file could not be verified as containing both video and audio streams: {}",
+                            path.display(),
+                        );
+                        log::error!("Download {} failed merge validation: {}", id, message);
+                        let _ = db_guard.set_status(id, DownloadStatus::Failed, Some("Merge validation failed"));
+                        let _ = event_tx.send(DownlinkEvent::DownloadFailed {
+                            id,
+                            error_code: events::ErrorCode::Unknown,
+                            user_message: message,
+                            actions: vec![],
+                        }).await;
+                        let _ = completion_tx.send(()).await;
+                        return;
+                    }
+                } else {
+                    log::warn!(
+                        "Download {} completed without ffprobe; skipping video/audio stream validation",
+                        id,
+                    );
                 }
             }
 

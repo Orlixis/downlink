@@ -37,8 +37,8 @@ export function DeveloperOptions({
           ) : (
             <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
           )}
-          <Terminal className="h-3.5 w-3.5 text-zinc-400" />
-          <span>Manual Load &amp; Developer Files</span>
+          {/* <Terminal className="h-3.5 w-3.5 text-zinc-400" /> */}
+          <span>Manual Load</span>
         </button>
 
         <div className="flex items-center gap-1.5">

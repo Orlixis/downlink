@@ -49,6 +49,7 @@ next-env.d.ts
 # Sidecar binaries (downloaded during build)
 /src-tauri/binaries/yt-dlp-*
 /src-tauri/binaries/ffmpeg-*
+/src-tauri/binaries/ffprobe-*
 # *docs.md
 # *_SUMMARY.md
 # *IMPROVEMENTS.md

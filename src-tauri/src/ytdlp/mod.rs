@@ -159,6 +159,11 @@ impl YtDlpRunner {
                 parse_preview_metadata(&first, url)
             }
             Err(e) => {
+                let is_youtube = url.contains("youtube.com") || url.contains("youtu.be");
+                if is_youtube {
+                    return Err(e);
+                }
+
                 log::warn!(
                     "yt-dlp Tier 1 failed for {}: {}. Attempting fallback iframe sniffer...",
                     url,

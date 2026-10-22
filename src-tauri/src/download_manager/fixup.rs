@@ -138,6 +138,53 @@ pub fn find_ffmpeg_binary() -> Option<PathBuf> {
     None
 }
 
+/// Verifies that a completed video container has at least one video and one audio stream.
+/// Audio-only presets are intentionally excluded by their caller.
+pub async fn has_video_and_audio_streams(media_path: &Path, ffprobe_bin: &Path) -> bool {
+    let mut cmd = Command::new(ffprobe_bin);
+    cmd.args([
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        media_path.to_string_lossy().as_ref(),
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = match tokio::time::timeout(Duration::from_secs(15), cmd.output()).await {
+        Ok(Ok(output)) if output.status.success() => output,
+        Ok(Ok(output)) => {
+            log::warn!(
+                "ffprobe rejected {} with status {}: {}",
+                media_path.display(),
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim(),
+            );
+            return false;
+        }
+        Ok(Err(error)) => {
+            log::warn!("Failed to execute ffprobe for {}: {}", media_path.display(), error);
+            return false;
+        }
+        Err(_) => {
+            log::warn!("ffprobe timed out while validating {}", media_path.display());
+            return false;
+        }
+    };
+
+    let streams = String::from_utf8_lossy(&output.stdout);
+    let has_video = streams.lines().any(|line| line.trim() == "video");
+    let has_audio = streams.lines().any(|line| line.trim() == "audio");
+    has_video && has_audio
+}
+
 pub async fn fetch_metadata_for_url(yt_dlp_path: &PathBuf, url: &str) -> Option<FetchedMetadata> {
     let mut cmd = Command::new(yt_dlp_path);
     cmd.args(["--dump-json", "--no-warnings", "--no-playlist", url]);
